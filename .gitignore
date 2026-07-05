@@ -1,0 +1,13 @@
+# Local secrets and server overrides
+api/config.local.php
+
+# SQLite database (created on server)
+data/*.db
+data/*.sqlite
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
