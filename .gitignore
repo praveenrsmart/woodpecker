@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+npm-debug.log*
+api/config.local.php
+data/woodpecker.db
+data/*.db
+data/*.sqlite
+data/*.db-journal
+.DS_Store
+Thumbs.db

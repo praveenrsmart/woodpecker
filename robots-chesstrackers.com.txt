@@ -1,0 +1,11 @@
+# https://chesstrackers.com/robots.txt
+# Upload to: chesstrackers.com/robots.txt (domain root, not inside /wood/)
+
+User-agent: *
+Allow: /
+
+# Private chess training app — do not crawl or index
+Disallow: /wood/
+
+# Sitemap (uncomment and set your real URL if you have one)
+# Sitemap: https://chesstrackers.com/sitemap.xml

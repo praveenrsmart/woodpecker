@@ -1,0 +1,3 @@
+# Block crawlers from indexing anything under /wood/
+User-agent: *
+Disallow: /

@@ -1,0 +1,27 @@
+DirectoryIndex index.html
+
+# Block search engine indexing for the whole /wood/ app
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Block sensitive folders (database, dev scripts)
+RewriteRule ^(?:data|scripts)(?:/|$) - [F,L]
+
+# API -> PHP backend
+RewriteRule ^api(?:/.*)?$ api/index.php [L,QSA]
+
+# Password reset page
+RewriteRule ^(?:forgot-password|reset-password)/?$ forgot-password.php [L]
+
+# Leave real files and folders alone
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# React SPA fallback
+RewriteRule ^ index.html [L]
+</IfModule>
