@@ -11,11 +11,40 @@ RewriteEngine On
 # Block sensitive folders (database, dev scripts)
 RewriteRule ^(?:data|scripts)(?:/|$) - [F,L]
 
-# API -> PHP backend
+# API -> PHP backend (keep real files like health.php / repair-*.php)
+# Pass Authorization through Apache rewrite (needed for academy student list)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^api(?:/.*)?$ api/index.php [L,QSA]
 
 # Password reset page
 RewriteRule ^(?:forgot-password|reset-password)/?$ forgot-password.php [L]
+
+# Shared login page (Student / Academy / Admin)
+RewriteRule ^login/?$ login.php [L,QSA]
+RewriteRule ^academy/login/?$ login.php [L,QSA]
+RewriteRule ^register/?$ login.php?role=student [L,QSA,R=302]
+
+# Super admin dashboard (login is on /login?role=admin)
+RewriteRule ^admin/?$ admin.php [L]
+
+# Student / Academy module homes and Opening / Endgame modules
+RewriteRule ^home/?$ student-home.php [L]
+RewriteRule ^academy/home/?$ academy-home.php [L]
+RewriteRule ^academy/openings/?$ academy-openings.php [L]
+RewriteRule ^academy/endgames/?$ academy-endgames.php [L]
+# Force students dashboard to PHP (do not fall through to React SPA)
+RewriteRule ^academy/?$ academy.php [L]
+RewriteRule ^academy\.php$ - [L]
+RewriteRule ^opening/board/?$ opening-board.php [L,QSA]
+RewriteRule ^opening/?$ opening.php [L,QSA]
+RewriteRule ^endgame/board/?$ endgame-board.php [L,QSA]
+RewriteRule ^endgame/?$ endgame.php [L,QSA]
+RewriteRule ^opening\.php$ - [L]
+RewriteRule ^opening-board\.php$ - [L]
+RewriteRule ^endgame\.php$ - [L]
+RewriteRule ^endgame-board\.php$ - [L]
 
 # Leave real files and folders alone
 RewriteCond %{REQUEST_FILENAME} -f [OR]

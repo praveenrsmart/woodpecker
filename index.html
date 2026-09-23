@@ -9,12 +9,51 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>Woodpecker Method — Chess Trainer</title>
+    <title>Chess Training</title>
+    <script>
+      // Force old React login / academy routes onto the unified PHP pages.
+      (function () {
+        var path = location.pathname.replace(/\/+$/, "");
+        var base = path.indexOf("/wood") === 0 ? "/wood" : "";
+        var role = null;
+        if (/(^|\/)academy\/login$/.test(path)) role = "academy";
+        else if (/(^|\/)(login|register)$/.test(path)) {
+          var m = location.search.match(/[?&]role=(student|academy|admin)/);
+          role = m ? m[1] : "student";
+        }
+        if (role) {
+          location.replace(base + "/login.php?role=" + role);
+          return;
+        }
+        // Exact /academy (not /academy/openings etc.) must use the new PHP dashboard.
+        if (/(^|\/)academy$/.test(path)) {
+          location.replace(base + "/academy.php");
+          return;
+        }
+        if (/(^|\/)endgame$/.test(path)) {
+          location.replace(base + "/endgame.php" + location.search);
+          return;
+        }
+        if (/(^|\/)endgame\/board$/.test(path)) {
+          location.replace(base + "/endgame-board.php" + location.search);
+          return;
+        }
+        if (/(^|\/)opening$/.test(path)) {
+          location.replace(base + "/opening.php" + location.search);
+          return;
+        }
+        if (/(^|\/)opening\/board$/.test(path)) {
+          location.replace(base + "/opening-board.php" + location.search);
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <script type="module" crossorigin src="/wood/assets/index-sA8ZWdLG.js"></script>
     <link rel="stylesheet" crossorigin href="/wood/assets/index-B2gsu7wV.css">
+    <script src="/wood/assets/student-home.js"></script>
+    <script src="/wood/assets/academy-create-student.js" defer></script>
   </head>
   <body>
     <div id="root"></div>

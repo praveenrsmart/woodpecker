@@ -104,6 +104,15 @@ final class Database
                 name TEXT NOT NULL,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS super_admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL DEFAULT 'Super Admin',
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
@@ -180,6 +189,33 @@ final class Database
         $this->dropPartialActiveCycleIndex();
         $this->migrateAcademyCoaches();
         $this->migrateAcademyStudentActive();
+        $this->migrateAccessControl();
+        $this->migrateDefaultSuperAdmin();
+        $this->migrateOpenings();
+        $this->migrateEndgames();
+        $this->migrateFeathersAcademy();
+    }
+
+    public function ensureSuperAdmin(string $username, string $password): void
+    {
+        $existing = $this->get('SELECT id FROM super_admins LIMIT 1');
+        if ($existing) {
+            return;
+        }
+
+        $clean = preg_replace('/[^a-z0-9_]/', '', strtolower(trim($username))) ?? '';
+        if ($clean === '' || strlen($password) < 4) {
+            return;
+        }
+
+        if (!function_exists('hashPassword')) {
+            require_once __DIR__ . '/Password.php';
+        }
+
+        $this->run(
+            'INSERT INTO super_admins (name, username, password_hash) VALUES (?, ?, ?)',
+            ['Super Admin', $clean, hashPassword($password)]
+        );
     }
 
     private function migrateAcademyStudentActive(): void
@@ -188,6 +224,267 @@ final class Database
         if (!in_array('is_active', $cols, true)) {
             $this->exec('ALTER TABLE academy_students ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
         }
+    }
+
+    private function migrateAccessControl(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS super_admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL DEFAULT 'Super Admin',
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        ");
+
+        $academyCols = array_column($this->all('PRAGMA table_info(academies)'), 'name');
+        if (!in_array('is_active', $academyCols, true)) {
+            $this->exec('ALTER TABLE academies ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+        }
+
+        $studentCols = array_column($this->all('PRAGMA table_info(students)'), 'name');
+        if (!in_array('is_active', $studentCols, true)) {
+            $this->exec('ALTER TABLE students ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+        }
+        if (!in_array('created_by_academy_id', $studentCols, true)) {
+            $this->exec('ALTER TABLE students ADD COLUMN created_by_academy_id INTEGER');
+        }
+    }
+
+    /**
+     * One-time: ensure a known default super admin exists (no CLI required).
+     * Username: superadmin
+     * Password: Woodpecker#Admin1
+     * Change this password after first login.
+     */
+    private function migrateDefaultSuperAdmin(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ");
+
+        $done = $this->get("SELECT value FROM app_meta WHERE key = 'default_super_admin_seeded'");
+        if ($done) {
+            return;
+        }
+
+        if (!function_exists('hashPassword')) {
+            require_once __DIR__ . '/Password.php';
+        }
+
+        $username = 'superadmin';
+        $password = 'Woodpecker#Admin1';
+        $hash = hashPassword($password);
+
+        $existing = $this->get('SELECT id FROM super_admins WHERE username = ?', [$username]);
+        if ($existing) {
+            $this->run(
+                'UPDATE super_admins SET password_hash = ? WHERE id = ?',
+                [$hash, (int) $existing['id']]
+            );
+        } else {
+            $this->run(
+                'INSERT INTO super_admins (name, username, password_hash) VALUES (?, ?, ?)',
+                ['Super Admin', $username, $hash]
+            );
+        }
+
+        $this->run(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('default_super_admin_seeded', ?)",
+            ['1']
+        );
+    }
+
+    private function migrateOpenings(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS openings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                academy_id INTEGER NOT NULL,
+                color_group TEXT NOT NULL,
+                name TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (academy_id) REFERENCES academies(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_openings_academy ON openings(academy_id);
+
+            CREATE TABLE IF NOT EXISTS opening_chapters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                opening_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                pgn TEXT NOT NULL,
+                start_fen TEXT NOT NULL,
+                moves_json TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (opening_id) REFERENCES openings(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_opening_chapters_opening ON opening_chapters(opening_id);
+
+            CREATE TABLE IF NOT EXISTS opening_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                opening_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                academy_id INTEGER NOT NULL,
+                assigned_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (opening_id) REFERENCES openings(id) ON DELETE CASCADE,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                UNIQUE(opening_id, student_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_opening_assignments_student ON opening_assignments(student_id);
+            CREATE INDEX IF NOT EXISTS idx_opening_assignments_opening ON opening_assignments(opening_id);
+
+            CREATE TABLE IF NOT EXISTS opening_tests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                opening_id INTEGER NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                started_at TEXT DEFAULT (datetime('now')),
+                completed_at TEXT,
+                passed INTEGER NOT NULL DEFAULT 0,
+                wrong_moves INTEGER NOT NULL DEFAULT 0,
+                correct_moves INTEGER NOT NULL DEFAULT 0,
+                total_player_moves INTEGER NOT NULL DEFAULT 0,
+                time_ms INTEGER NOT NULL DEFAULT 0,
+                current_move_index INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY (opening_id) REFERENCES openings(id) ON DELETE CASCADE,
+                FOREIGN KEY (chapter_id) REFERENCES opening_chapters(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_opening_tests_student ON opening_tests(student_id, opening_id);
+            CREATE INDEX IF NOT EXISTS idx_opening_tests_chapter ON opening_tests(chapter_id, student_id);
+        ");
+    }
+
+    private function migrateEndgames(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS endgame_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                academy_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (academy_id) REFERENCES academies(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_endgame_categories_academy ON endgame_categories(academy_id);
+
+            CREATE TABLE IF NOT EXISTS endgame_subcategories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (category_id) REFERENCES endgame_categories(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_endgame_subcategories_category ON endgame_subcategories(category_id);
+
+            CREATE TABLE IF NOT EXISTS endgame_chapters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subcategory_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                fen TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (subcategory_id) REFERENCES endgame_subcategories(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_endgame_chapters_sub ON endgame_chapters(subcategory_id);
+
+            CREATE TABLE IF NOT EXISTS endgame_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER NOT NULL,
+                student_id INTEGER NOT NULL,
+                academy_id INTEGER NOT NULL,
+                assigned_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (category_id) REFERENCES endgame_categories(id) ON DELETE CASCADE,
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                UNIQUE(category_id, student_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_endgame_assignments_student ON endgame_assignments(student_id);
+
+            CREATE TABLE IF NOT EXISTS endgame_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                category_id INTEGER NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'practice',
+                engine_level TEXT NOT NULL DEFAULT 'intermediate',
+                started_at TEXT DEFAULT (datetime('now')),
+                completed_at TEXT,
+                passed INTEGER NOT NULL DEFAULT 0,
+                failed_restarts INTEGER NOT NULL DEFAULT 0,
+                result TEXT NOT NULL DEFAULT '*',
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY (category_id) REFERENCES endgame_categories(id) ON DELETE CASCADE,
+                FOREIGN KEY (chapter_id) REFERENCES endgame_chapters(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_endgame_attempts_student ON endgame_attempts(student_id, chapter_id);
+        ");
+    }
+
+    private function migrateFeathersAcademy(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ");
+        $done = $this->get("SELECT value FROM app_meta WHERE key = 'feathers_students_moved'");
+        if ($done) {
+            return;
+        }
+
+        $academy = $this->get(
+            "SELECT * FROM academies
+             WHERE LOWER(name) LIKE '%feather%' OR LOWER(username) LIKE '%feather%'
+             ORDER BY id ASC LIMIT 1"
+        );
+        if (!$academy) {
+            if (!function_exists('hashPassword')) {
+                require_once __DIR__ . '/Password.php';
+            }
+            $id = $this->run(
+                'INSERT INTO academies (name, username, password_hash, is_active) VALUES (?, ?, ?, 1)',
+                ['Feathers Academy', 'feathers', hashPassword('feathers1234')]
+            );
+            $academy = $this->get('SELECT * FROM academies WHERE id = ?', [$id]);
+        }
+        if (!$academy) {
+            return;
+        }
+
+        $academyId = (int) $academy['id'];
+        $this->run('UPDATE academies SET is_active = 1 WHERE id = ?', [$academyId]);
+
+        foreach ($this->all('SELECT id FROM students') as $student) {
+            $studentId = (int) $student['id'];
+            $this->run(
+                'INSERT OR IGNORE INTO academy_students (academy_id, student_id, coach_name, is_active) VALUES (?, ?, ?, 1)',
+                [$academyId, $studentId, '']
+            );
+            $this->run(
+                'UPDATE academy_students SET is_active = 1 WHERE academy_id = ? AND student_id = ?',
+                [$academyId, $studentId]
+            );
+            $this->run(
+                'UPDATE students SET created_by_academy_id = ? WHERE id = ?',
+                [$academyId, $studentId]
+            );
+        }
+        $this->run('DELETE FROM academy_students WHERE academy_id != ?', [$academyId]);
+        $this->run(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('feathers_students_moved', ?)",
+            [(string) $academyId]
+        );
     }
 
     private function migrateAcademyCoaches(): void

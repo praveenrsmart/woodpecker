@@ -1,0 +1,55 @@
+Chess Training — upload instructions
+====================================
+
+Give the developer this whole project folder, but they must follow these rules.
+
+DO NOT UPLOAD (would wipe live players)
+---------------------------------------
+- api/data/woodpecker.db
+- api/data/*.db
+- data/*.db
+- api/config.local.php
+- node_modules/
+- scripts/  (dev tests only, not needed on live)
+
+Upload everything else over the existing /wood/ files:
+- .htaccess
+- index.html
+- login.php, admin.php, forgot-password.php
+- student-home.php, academy-home.php, academy.php
+- opening.php, opening-board.php
+- endgame.php, endgame-board.php
+- academy-openings.php, academy-endgames.php
+- router.php
+- api/  (PHP code only, not the local database)
+- assets/
+
+After upload
+------------
+1. Keep the LIVE database file that is already on the server. Do not replace it.
+2. Open the site once (any page). The database updates itself.
+3. Existing Feathers academy is kept. All existing students are moved under Feathers.
+   The Feathers login password is NOT changed.
+4. If no Feathers academy exists yet, the site creates:
+   username: feathers
+   password: feathers1234
+   Change that password after first login.
+5. Super admin is created automatically on first page load (no CLI needed):
+   username: superadmin
+   password: Woodpecker#Admin1
+   Sign in at /wood/login → Admin tab, then change the password.
+   (One-time migration; if login still fails, upload api/create-super-admin-once.php and open it once.)
+
+What players should see
+-----------------------
+- Login: Student / Academy / Admin tabs. No public "create student account".
+- Student home: Opening, Woodpecker, Endgame
+- Academy home (/wood/academy/home): Opening library · Students · Endgame library
+- Super admin can reset academy passwords and enable/disable academies
+
+Default / bootstrap logins
+--------------------------
+superadmin / Woodpecker#Admin1   ← change after first login
+demoacademy / demo1234           ← local demo only
+feathers / feathers1234          ← only if Feathers was auto-created
+dummy_student / pass1234         ← local demo only

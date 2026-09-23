@@ -7,7 +7,7 @@ declare(strict_types=1);
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
   <meta name="googlebot" content="noindex, nofollow" />
-  <title>Reset Password — Woodpecker Method</title>
+  <title>Reset Password — Chess Training</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <style>
@@ -127,6 +127,23 @@ declare(strict_types=1);
     }
     .links a { color: var(--accent); font-weight: 800; text-decoration: none; }
     .links a:hover { color: var(--accent-2); }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab {
+      flex: 1;
+      width: auto;
+      padding: 10px;
+      border: 2px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font-weight: 800;
+      box-shadow: none;
+      margin-top: 0;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      color: #fff;
+      background: linear-gradient(135deg, #6366f1, #a855f7 50%, #ec4899);
+    }
     .hint {
       font-size: 12px;
       color: #7c3aed;
@@ -139,7 +156,13 @@ declare(strict_types=1);
   <div class="card">
     <div class="logo">🪶</div>
     <h1>Reset Password</h1>
-    <p class="intro">Enter your username and Student ID (shown on your home screen after login), then choose a new password.</p>
+    <p class="intro" id="intro">Enter your username and Student ID (shown on your home screen after login), then choose a new password.</p>
+
+    <div class="tabs" id="tabs">
+      <button type="button" class="tab" data-role="student">Student</button>
+      <button type="button" class="tab" data-role="academy">Academy</button>
+      <button type="button" class="tab" data-role="admin">Admin</button>
+    </div>
 
     <div id="message" class="msg" role="alert"></div>
 
@@ -148,10 +171,10 @@ declare(strict_types=1);
         <label for="username">Username</label>
         <input id="username" name="username" type="text" autocomplete="username" required placeholder="your_username" />
       </div>
-      <div class="field">
-        <label for="studentId">Student ID</label>
-        <input id="studentId" name="studentId" type="number" min="1" step="1" required placeholder="e.g. 42" />
-        <p class="hint">Your numeric ID from the training home page (e.g. #42 → enter 42).</p>
+      <div class="field" id="id-field">
+        <label for="accountId" id="id-label">Student ID</label>
+        <input id="accountId" name="accountId" type="number" min="1" step="1" required placeholder="e.g. 42" />
+        <p class="hint" id="id-hint">Your numeric ID from the training home page (e.g. #42 → enter 42).</p>
       </div>
       <div class="field">
         <label for="newPassword">New password</label>
@@ -164,16 +187,77 @@ declare(strict_types=1);
       <button type="submit" id="submit-btn">Update password</button>
     </form>
 
-    <p class="links">
-      <a href="/wood/login">← Back to sign in</a><br />
-      <a href="/wood/register">Create an account</a>
-    </p>
+    <p class="links" id="links"></p>
   </div>
 
   <script>
+    const params = new URLSearchParams(location.search);
+    let role = params.get("role") || "student";
+    if (!["student", "academy", "admin"].includes(role)) role = "student";
+
+    const BASE = location.pathname.indexOf("/wood") === 0 ? "/wood" : "";
     const form = document.getElementById("reset-form");
     const message = document.getElementById("message");
     const submitBtn = document.getElementById("submit-btn");
+    const intro = document.getElementById("intro");
+    const idLabel = document.getElementById("id-label");
+    const idHint = document.getElementById("id-hint");
+    const links = document.getElementById("links");
+    const tabs = document.getElementById("tabs");
+
+    const copy = {
+      student: {
+        intro: "Enter your username and Student ID (shown on your home screen after login), then choose a new password.",
+        idLabel: "Student ID",
+        hint: "Your numeric ID from the training home page (e.g. #42 → enter 42).",
+        endpoint: "/api/auth/reset-password",
+        idKey: "studentId",
+        signin: "/login.php?role=student",
+      },
+      academy: {
+        intro: "Enter your academy username and Academy ID (shown on your academy dashboard), then choose a new password.",
+        idLabel: "Academy ID",
+        hint: "Your numeric Academy ID from the academy dashboard (e.g. #3 → enter 3).",
+        endpoint: "/api/academy/reset-password",
+        idKey: "academyId",
+        signin: "/login.php?role=academy",
+      },
+      admin: {
+        intro: "Enter your super admin username and Admin ID (shown after you sign in), then choose a new password.",
+        idLabel: "Admin ID",
+        hint: "Your numeric Admin ID from the super admin dashboard (e.g. #1 → enter 1).",
+        endpoint: "/api/admin/reset-password",
+        idKey: "adminId",
+        signin: "/login.php?role=admin",
+      },
+    };
+
+    function applyRole() {
+      const cfg = copy[role];
+      intro.textContent = cfg.intro;
+      idLabel.textContent = cfg.idLabel;
+      idHint.textContent = cfg.hint;
+      tabs.querySelectorAll(".tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-role") === role);
+      });
+      if (role === "admin") {
+        links.innerHTML = '<a href="' + BASE + '/login.php?role=admin">← Back to sign in</a>';
+      } else if (role === "academy") {
+        links.innerHTML = '<a href="' + BASE + '/login.php?role=academy">← Back to sign in</a>';
+      } else {
+        links.innerHTML = '<a href="' + BASE + '/login.php?role=student">← Back to sign in</a>';
+      }
+    }
+
+    tabs.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        role = btn.getAttribute("data-role");
+        history.replaceState({}, "", "?role=" + role);
+        applyRole();
+      });
+    });
+
+    applyRole();
 
     function showMsg(text, type) {
       message.textContent = text;
@@ -184,8 +268,9 @@ declare(strict_types=1);
       e.preventDefault();
       message.className = "msg";
 
+      const cfg = copy[role];
       const username = document.getElementById("username").value.trim();
-      const studentId = parseInt(document.getElementById("studentId").value, 10);
+      const accountId = parseInt(document.getElementById("accountId").value, 10);
       const newPassword = document.getElementById("newPassword").value;
       const confirmPassword = document.getElementById("confirmPassword").value;
 
@@ -202,10 +287,12 @@ declare(strict_types=1);
       submitBtn.textContent = "Updating…";
 
       try {
-        const res = await fetch("/wood/api/auth/reset-password", {
+        const payload = { username, newPassword };
+        payload[cfg.idKey] = accountId;
+        const res = await fetch(BASE + cfg.endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, studentId, newPassword }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -213,7 +300,7 @@ declare(strict_types=1);
         }
         showMsg(data.message || "Password updated. Redirecting to sign in…", "success");
         form.reset();
-        setTimeout(() => { window.location.href = "/wood/login"; }, 2000);
+        setTimeout(() => { window.location.href = BASE + cfg.signin; }, 2000);
       } catch (err) {
         showMsg(err.message || "Something went wrong. Try again.", "error");
       } finally {

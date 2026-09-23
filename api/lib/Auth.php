@@ -46,16 +46,24 @@ final class Auth
             }
 
             $id = (int) $entityId;
+            if ($type === 'admin') {
+                $admin = $this->db->get(
+                    'SELECT id, name, username FROM super_admins WHERE id = ?',
+                    [$id]
+                );
+                return $admin ? ['type' => 'admin', 'entity' => $admin] : null;
+            }
+
             if ($type === 'academy') {
                 $academy = $this->db->get(
-                    'SELECT id, name, username FROM academies WHERE id = ?',
+                    'SELECT id, name, username FROM academies WHERE id = ? AND COALESCE(is_active, 1) = 1',
                     [$id]
                 );
                 return $academy ? ['type' => 'academy', 'entity' => $academy] : null;
             }
 
             $student = $this->db->get(
-                'SELECT id, name, username FROM students WHERE id = ?',
+                'SELECT id, name, username FROM students WHERE id = ? AND COALESCE(is_active, 1) = 1',
                 [$id]
             );
             return $student ? ['type' => 'student', 'entity' => $student] : null;
@@ -66,11 +74,52 @@ final class Auth
 
     public function bearerSession(): ?array
     {
-        $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        $header = $this->authorizationHeader();
         if (!str_starts_with($header, 'Bearer ')) {
             return null;
         }
         return $this->parseToken(substr($header, 7));
+    }
+
+    private function authorizationHeader(): string
+    {
+        $candidates = [
+            $_SERVER['HTTP_AUTHORIZATION'] ?? null,
+            $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+            $_SERVER['REDIRECT_REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+        ];
+
+        if (function_exists('apache_request_headers')) {
+            $headers = apache_request_headers();
+            if (is_array($headers)) {
+                foreach ($headers as $key => $value) {
+                    if (strtolower((string) $key) === 'authorization') {
+                        $candidates[] = $value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (is_array($headers)) {
+                foreach ($headers as $key => $value) {
+                    if (strtolower((string) $key) === 'authorization') {
+                        $candidates[] = $value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     public function requireStudent(): array
@@ -87,6 +136,15 @@ final class Auth
         $session = $this->bearerSession();
         if (!$session || $session['type'] !== 'academy') {
             Http::error('Academy login required', 401);
+        }
+        return $session;
+    }
+
+    public function requireAdmin(): array
+    {
+        $session = $this->bearerSession();
+        if (!$session || $session['type'] !== 'admin') {
+            Http::error('Super admin login required', 401);
         }
         return $session;
     }
@@ -122,6 +180,24 @@ function cleanUsername(string $username): string
 }
 
 function sanitizeStudent(?array $row): ?array
+{
+    if (!$row) {
+        return null;
+    }
+    unset($row['password_hash'], $row['created_by_academy_id']);
+    return $row;
+}
+
+function sanitizeAcademy(?array $row): ?array
+{
+    if (!$row) {
+        return null;
+    }
+    unset($row['password_hash']);
+    return $row;
+}
+
+function sanitizeAdmin(?array $row): ?array
 {
     if (!$row) {
         return null;

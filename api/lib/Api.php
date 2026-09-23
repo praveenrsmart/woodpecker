@@ -13,7 +13,9 @@ final class Api
         private Database $db,
         private Auth $auth,
         private ChessService $chess,
-        private array $config
+        private array $config,
+        private OpeningService $openings,
+        private EndgameService $endgames
     ) {
         if (is_file($config['puzzles_path'])) {
             $decoded = json_decode((string) file_get_contents($config['puzzles_path']), true);
@@ -35,11 +37,35 @@ final class Api
             'POST /academy/students' => fn () => $this->academyAddStudent(),
             'GET /academy/coaches' => fn () => $this->academyCoaches(),
             'POST /academy/coaches' => fn () => $this->academyAddCoach(),
+            'POST /admin/login' => fn () => $this->adminLogin(),
+            'GET /admin/me' => fn () => $this->adminMe(),
+            'POST /admin/reset-password' => fn () => $this->adminResetPassword(),
+            'POST /admin/change-password' => fn () => $this->adminChangePassword(),
+            'GET /admin/admins' => fn () => $this->adminListAdmins(),
+            'POST /admin/admins' => fn () => $this->adminCreateAdmin(),
+            'GET /admin/academies' => fn () => $this->adminAcademies(),
+            'POST /admin/academies' => fn () => $this->adminCreateAcademy(),
+            'POST /academy/reset-password' => fn () => $this->academyResetPassword(),
+            'POST /academy/change-password' => fn () => $this->academyChangePassword(),
             'GET /puzzles' => fn () => $this->getPuzzles(),
             'POST /cycles/start' => fn () => $this->startCycle(),
             'GET /me/cycles/active' => fn () => $this->activeCycles(),
             'GET /me/results' => fn () => $this->myResults(),
             'POST /attempts/start' => fn () => $this->startAttempt(),
+            'GET /academy/openings' => fn () => $this->academyOpenings(),
+            'POST /academy/openings' => fn () => $this->academyCreateOpening(),
+            'POST /academy/openings/parse-pgn' => fn () => $this->academyParsePgn(),
+            'GET /me/openings' => fn () => $this->studentOpenings(),
+            'GET /me/opening-tests' => fn () => $this->studentOpeningTests(),
+            'POST /opening-tests/start' => fn () => $this->startOpeningTest(),
+            'GET /academy/endgames' => fn () => $this->academyEndgames(),
+            'POST /academy/endgames' => fn () => $this->academyCreateEndgameCategory(),
+            'POST /academy/endgames/analyze' => fn () => $this->academyAnalyzeEndgameFen(),
+            'GET /me/endgames' => fn () => $this->studentEndgames(),
+            'GET /endgame/levels' => fn () => $this->endgameLevels(),
+            'POST /endgame/move' => fn () => $this->endgameMove(),
+            'POST /endgame/engine-move' => fn () => $this->endgameEngineMove(),
+            'POST /endgame-attempts/start' => fn () => $this->startEndgameAttempt(),
         ];
 
         $key = $method . ' ' . $path;
@@ -58,6 +84,10 @@ final class Api
         }
         if (preg_match('#^/academy/students/(\d+)/stats$#', $path, $m) && $method === 'GET') {
             $this->academyStudentStats((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/admin/academies/(\d+)$#', $path, $m) && $method === 'PATCH') {
+            $this->adminPatchAcademy((int) $m[1]);
             return;
         }
         if (preg_match('#^/puzzles/(\d+)$#', $path, $m) && $method === 'GET') {
@@ -102,6 +132,121 @@ final class Api
         }
         if (preg_match('#^/students/(\d+)/results$#', $path, $m) && $method === 'GET') {
             $this->studentResults((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/openings/(\d+)$#', $path, $m)) {
+            $id = (int) $m[1];
+            if ($method === 'GET') {
+                $this->academyGetOpening($id);
+                return;
+            }
+            if ($method === 'PATCH') {
+                $this->academyPatchOpening($id);
+                return;
+            }
+            if ($method === 'DELETE') {
+                $this->academyDeleteOpening($id);
+                return;
+            }
+        }
+        if (preg_match('#^/academy/openings/(\d+)/chapters$#', $path, $m) && $method === 'POST') {
+            $this->academyAddChapter((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/openings/(\d+)/assign$#', $path, $m) && $method === 'POST') {
+            $this->academyAssignOpening((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/openings/(\d+)/progress$#', $path, $m) && $method === 'GET') {
+            $this->academyOpeningProgress((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/chapters/(\d+)$#', $path, $m)) {
+            $id = (int) $m[1];
+            if ($method === 'PATCH') {
+                $this->academyPatchChapter($id);
+                return;
+            }
+            if ($method === 'DELETE') {
+                $this->academyDeleteChapter($id);
+                return;
+            }
+        }
+        if (preg_match('#^/me/openings/(\d+)$#', $path, $m) && $method === 'GET') {
+            $this->studentGetOpening((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/opening-tests/(\d+)$#', $path, $m) && $method === 'GET') {
+            $this->getOpeningTest((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/opening-tests/(\d+)/play$#', $path, $m) && $method === 'POST') {
+            $this->playOpeningTest((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/endgames/(\d+)$#', $path, $m)) {
+            $id = (int) $m[1];
+            if ($method === 'GET') {
+                $this->academyGetEndgameCategory($id);
+                return;
+            }
+            if ($method === 'PATCH') {
+                $this->academyPatchEndgameCategory($id);
+                return;
+            }
+            if ($method === 'DELETE') {
+                $this->academyDeleteEndgameCategory($id);
+                return;
+            }
+        }
+        if (preg_match('#^/academy/endgames/(\d+)/subcategories$#', $path, $m) && $method === 'POST') {
+            $this->academyAddEndgameSubcategory((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/endgames/(\d+)/assign$#', $path, $m) && $method === 'POST') {
+            $this->academyAssignEndgame((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/endgames/(\d+)/progress$#', $path, $m) && $method === 'GET') {
+            $this->academyEndgameProgress((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/endgame-subcategories/(\d+)$#', $path, $m)) {
+            $id = (int) $m[1];
+            if ($method === 'PATCH') {
+                $this->academyPatchEndgameSubcategory($id);
+                return;
+            }
+            if ($method === 'DELETE') {
+                $this->academyDeleteEndgameSubcategory($id);
+                return;
+            }
+        }
+        if (preg_match('#^/academy/endgame-subcategories/(\d+)/chapters$#', $path, $m) && $method === 'POST') {
+            $this->academyAddEndgameChapter((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/academy/endgame-chapters/(\d+)$#', $path, $m)) {
+            $id = (int) $m[1];
+            if ($method === 'PATCH') {
+                $this->academyPatchEndgameChapter($id);
+                return;
+            }
+            if ($method === 'DELETE') {
+                $this->academyDeleteEndgameChapter($id);
+                return;
+            }
+        }
+        if (preg_match('#^/me/endgames/(\d+)$#', $path, $m) && $method === 'GET') {
+            $this->studentGetEndgame((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/endgame-attempts/(\d+)$#', $path, $m) && $method === 'GET') {
+            $this->getEndgameAttempt((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/endgame-attempts/(\d+)/finish$#', $path, $m) && $method === 'POST') {
+            $this->finishEndgameAttempt((int) $m[1]);
             return;
         }
 
@@ -184,19 +329,23 @@ final class Api
 
     private function finalizeCycleTime(int $cycleId): int
     {
-        $this->tickCycleTimer($cycleId);
-        $cycle = $this->db->get('SELECT * FROM cycles WHERE id = ?', [$cycleId]);
-        if (!$cycle) {
-            return 0;
-        }
-
-        $finalTimeMs = $this->getCycleTimeMs($cycle);
+        $finalTimeMs = $this->sumCompletedPuzzleTimes($cycleId);
         $this->db->run(
             "UPDATE cycles SET total_time_ms = ?, cycle_accumulated_ms = ?, cycle_resumed_at = NULL, last_activity_at = NULL WHERE id = ?",
             [$finalTimeMs, $finalTimeMs, $cycleId]
         );
 
         return $finalTimeMs;
+    }
+
+    private function sumCompletedPuzzleTimes(int $cycleId): int
+    {
+        $row = $this->db->get(
+            'SELECT COALESCE(SUM(time_ms), 0) as t FROM puzzle_attempts WHERE cycle_id = ? AND completed = 1',
+            [$cycleId]
+        );
+
+        return (int) ($row['t'] ?? 0);
     }
 
     /** @return array<string, mixed> */
@@ -310,97 +459,14 @@ final class Api
     }
 
     /**
-     * Resume the cycle timer. Called when player enters a puzzle screen.
-     * If already running, just updates last_activity_at.
-     */
-    private function tickCycleTimer(int $cycleId): void
-    {
-        $cycle = $this->db->get('SELECT * FROM cycles WHERE id = ?', [$cycleId]);
-        if (!$cycle) {
-            return;
-        }
-
-        $resumedAt = $cycle['cycle_resumed_at'] ?? null;
-
-        if (!$resumedAt) {
-            // Timer was paused — start a new session
-            $this->db->run(
-                "UPDATE cycles SET cycle_resumed_at = datetime('now'), last_activity_at = datetime('now') WHERE id = ?",
-                [$cycleId]
-            );
-        } else {
-            // Timer already running — update last activity
-            $this->db->run(
-                "UPDATE cycles SET last_activity_at = datetime('now') WHERE id = ?",
-                [$cycleId]
-            );
-        }
-    }
-
-    /**
-     * Pause the cycle timer. Called when player leaves puzzle screen (clicks back).
-     * Saves the active session time into cycle_accumulated_ms.
-     */
-    private function pauseCycleTimer(int $cycleId): void
-    {
-        $cycle = $this->db->get('SELECT * FROM cycles WHERE id = ?', [$cycleId]);
-        if (!$cycle) {
-            return;
-        }
-
-        $resumedAt = $cycle['cycle_resumed_at'] ?? null;
-        if (!$resumedAt) {
-            return; // Already paused
-        }
-
-        $resumeTs = strtotime($resumedAt);
-        $nowTs = time();
-        $accumulated = (int) ($cycle['cycle_accumulated_ms'] ?? 0);
-
-        if ($resumeTs && $nowTs > $resumeTs) {
-            $accumulated += ($nowTs - $resumeTs) * 1000;
-        }
-
-        // Save accumulated and clear resumed_at (= paused state)
-        $this->db->run(
-            "UPDATE cycles SET cycle_accumulated_ms = ?, cycle_resumed_at = NULL, last_activity_at = NULL WHERE id = ?",
-            [$accumulated, $cycleId]
-        );
-    }
-
-    /**
-     * Get the current cycle time in milliseconds.
-     * If running: accumulated + current session. If paused: just accumulated.
+     * Cycle time is the sum of each completed puzzle's solve time.
      */
     private function getCycleTimeMs(array $cycle): int
     {
-        if (!empty($cycle['completed_at'])) {
-            $frozen = (int) ($cycle['total_time_ms'] ?? 0);
-            if ($frozen > 0) {
-                return $frozen;
-            }
-
-            return (int) ($cycle['cycle_accumulated_ms'] ?? 0);
-        }
-
-        $accumulated = (int) ($cycle['cycle_accumulated_ms'] ?? 0);
-        $resumedAt = $cycle['cycle_resumed_at'] ?? null;
-
-        if (!$resumedAt) {
-            return $accumulated;
-        }
-
-        $resumeTs = strtotime($resumedAt);
-        $nowTs = time();
-
-        if ($resumeTs && $nowTs > $resumeTs) {
-            return $accumulated + ($nowTs - $resumeTs) * 1000;
-        }
-
-        return $accumulated;
+        return $this->sumCompletedPuzzleTimes((int) $cycle['id']);
     }
 
-    private function registerStudentAccount(array $body): array
+    private function registerStudentAccount(array $body, ?int $createdByAcademyId = null): array
     {
         $name = trim((string) ($body['name'] ?? ''));
         $username = trim((string) ($body['username'] ?? ''));
@@ -423,8 +489,8 @@ final class Api
 
         try {
             $id = $this->db->run(
-                'INSERT INTO students (name, username, password_hash) VALUES (?, ?, ?)',
-                [$name, $clean, hashPassword($password)]
+                'INSERT INTO students (name, username, password_hash, created_by_academy_id, is_active) VALUES (?, ?, ?, ?, 1)',
+                [$name, $clean, hashPassword($password), $createdByAcademyId]
             );
             $student = $this->db->get(
                 'SELECT id, name, username, created_at FROM students WHERE id = ?',
@@ -440,6 +506,26 @@ final class Api
             }
             throw $e;
         }
+    }
+
+    private function studentOwnedByAcademy(int $academyId, int $studentId): bool
+    {
+        $row = $this->db->get(
+            'SELECT created_by_academy_id FROM students WHERE id = ?',
+            [$studentId]
+        );
+        return $row !== null && (int) ($row['created_by_academy_id'] ?? 0) === $academyId;
+    }
+
+    private function setOwnedStudentLoginActive(int $academyId, int $studentId, bool $active): void
+    {
+        if (!$this->studentOwnedByAcademy($academyId, $studentId)) {
+            return;
+        }
+        $this->db->run(
+            'UPDATE students SET is_active = ? WHERE id = ?',
+            [$active ? 1 : 0, $studentId]
+        );
     }
 
     private function academyHasStudent(int $academyId, int $studentId): bool
@@ -571,6 +657,9 @@ final class Api
         if (!$student || !verifyPassword($password, $student['password_hash'])) {
             Http::error('Invalid username or password', 401);
         }
+        if (isset($student['is_active']) && (int) $student['is_active'] === 0) {
+            Http::error('This account has been disabled. Contact your academy.', 403);
+        }
 
         Http::json([
             'token' => $this->auth->createToken('student', (int) $student['id']),
@@ -604,11 +693,14 @@ final class Api
         }
 
         $student = $this->db->get(
-            'SELECT id FROM students WHERE id = ? AND username = ?',
+            'SELECT id, is_active FROM students WHERE id = ? AND username = ?',
             [$studentId, $clean]
         );
         if (!$student) {
             Http::error('Username and Student ID do not match our records', 404);
+        }
+        if (isset($student['is_active']) && (int) $student['is_active'] === 0) {
+            Http::error('This account has been disabled. Contact your academy.', 403);
         }
 
         $this->db->run(
@@ -619,6 +711,79 @@ final class Api
         Http::json([
             'ok' => true,
             'message' => 'Password updated successfully. You can sign in with your new password.',
+        ]);
+    }
+
+    private function requireNewPassword(string $password): void
+    {
+        if (strlen($password) < 4) {
+            Http::error('Password must be at least 4 characters', 400);
+        }
+    }
+
+    private function academyResetPassword(): void
+    {
+        $body = Http::body();
+        $username = trim((string) ($body['username'] ?? ''));
+        $academyId = (int) ($body['academyId'] ?? 0);
+        $newPassword = (string) ($body['newPassword'] ?? '');
+
+        if ($username === '' || $academyId < 1) {
+            Http::error('Username and Academy ID are required', 400);
+        }
+        $this->requireNewPassword($newPassword);
+
+        $clean = cleanUsername($username);
+        if ($clean === '') {
+            Http::error('Invalid username', 400);
+        }
+
+        $academy = $this->db->get(
+            'SELECT id, is_active FROM academies WHERE id = ? AND username = ?',
+            [$academyId, $clean]
+        );
+        if (!$academy) {
+            Http::error('Username and Academy ID do not match our records', 404);
+        }
+        if (isset($academy['is_active']) && (int) $academy['is_active'] === 0) {
+            Http::error('This academy account has been disabled. Contact the super admin.', 403);
+        }
+
+        $this->db->run(
+            'UPDATE academies SET password_hash = ? WHERE id = ?',
+            [hashPassword($newPassword), $academyId]
+        );
+
+        Http::json([
+            'ok' => true,
+            'message' => 'Password updated successfully. You can sign in with your new password.',
+        ]);
+    }
+
+    private function academyChangePassword(): void
+    {
+        $session = $this->auth->requireAcademy();
+        $body = Http::body();
+        $current = (string) ($body['currentPassword'] ?? '');
+        $newPassword = (string) ($body['newPassword'] ?? '');
+        $this->requireNewPassword($newPassword);
+
+        $academy = $this->db->get(
+            'SELECT password_hash FROM academies WHERE id = ?',
+            [(int) $session['entity']['id']]
+        );
+        if (!$academy || !verifyPassword($current, $academy['password_hash'])) {
+            Http::error('Current password is incorrect', 400);
+        }
+
+        $this->db->run(
+            'UPDATE academies SET password_hash = ? WHERE id = ?',
+            [hashPassword($newPassword), (int) $session['entity']['id']]
+        );
+
+        Http::json([
+            'ok' => true,
+            'message' => 'Password updated successfully.',
         ]);
     }
 
@@ -678,6 +843,9 @@ final class Api
         if (!$academy || !verifyPassword($password, $academy['password_hash'])) {
             Http::error('Invalid username or password', 401);
         }
+        if (isset($academy['is_active']) && (int) $academy['is_active'] === 0) {
+            Http::error('This academy account has been disabled. Contact the super admin.', 403);
+        }
 
         Http::json([
             'token' => $this->auth->createToken('academy', (int) $academy['id']),
@@ -707,16 +875,23 @@ final class Api
 
         $sql = "
             SELECT s.id, s.name, s.username, s.created_at, a.coach_name, a.added_at, a.is_active,
+              s.created_by_academy_id,
+              COALESCE(s.is_active, 1) as login_active,
               (SELECT COUNT(*) FROM cycles c WHERE c.student_id = s.id AND c.completed_at IS NOT NULL) as completed_cycles,
               (SELECT COUNT(*) FROM puzzle_attempts pa
                JOIN cycles c ON c.id = pa.cycle_id
                WHERE c.student_id = s.id AND pa.solution_revealed = 1) as solutions_revealed,
-              (SELECT COALESCE(SUM(cycle_accumulated_ms), 0) FROM cycles c WHERE c.student_id = s.id) as total_training_ms,
+              (SELECT COALESCE(SUM(pa.time_ms), 0)
+               FROM puzzle_attempts pa
+               JOIN cycles c ON c.id = pa.cycle_id
+               WHERE c.student_id = s.id AND pa.completed = 1) as total_training_ms,
               (SELECT GROUP_CONCAT(c.section_filter || ' #' || c.cycle_number, ', ')
                FROM cycles c
                WHERE c.student_id = s.id AND c.completed_at IS NULL) as active_cycles_label,
-              (SELECT COALESCE(SUM(cycle_accumulated_ms), 0) FROM cycles c
-               WHERE c.student_id = s.id AND c.completed_at IS NULL) as active_cycles_time_ms
+              (SELECT COALESCE(SUM(pa.time_ms), 0)
+               FROM puzzle_attempts pa
+               JOIN cycles c ON c.id = pa.cycle_id
+               WHERE c.student_id = s.id AND c.completed_at IS NULL AND pa.completed = 1) as active_cycles_time_ms
             FROM academy_students a
             JOIN students s ON s.id = a.student_id
             WHERE a.academy_id = ?
@@ -805,9 +980,29 @@ final class Api
     {
         $session = $this->auth->requireAcademy();
         $body = Http::body();
+        $academyId = (int) $session['entity']['id'];
+        $tag = trim((string) ($body['coachName'] ?? '')) ?: 'Unassigned';
+        $this->ensureAcademyCoach($academyId, $tag);
+
         $id = (int) ($body['studentId'] ?? 0);
+        $created = false;
+        $plainPassword = null;
+
+        $createdStudent = null;
+        if ($id <= 0 && trim((string) ($body['name'] ?? '')) !== '') {
+            try {
+                $createdStudent = $this->registerStudentAccount($body, $academyId);
+            } catch (RuntimeException $e) {
+                $status = str_contains($e->getMessage(), 'taken') ? 409 : 400;
+                Http::error($e->getMessage(), $status);
+            }
+            $id = (int) $createdStudent['id'];
+            $created = true;
+            $plainPassword = (string) ($body['password'] ?? '');
+        }
+
         if ($id <= 0) {
-            Http::error('Valid student ID required', 400);
+            Http::error('Provide a student name, username and password, or an existing student ID', 400);
         }
 
         $student = $this->db->get('SELECT id, name, username FROM students WHERE id = ?', [$id]);
@@ -815,26 +1010,34 @@ final class Api
             Http::error('Student not found', 404);
         }
 
-        $tag = trim((string) ($body['coachName'] ?? '')) ?: 'Unassigned';
-        $this->ensureAcademyCoach((int) $session['entity']['id'], $tag);
-
         try {
             $this->db->run(
                 'INSERT INTO academy_students (academy_id, student_id, coach_name, is_active) VALUES (?, ?, ?, 1)',
-                [(int) $session['entity']['id'], $id, $tag]
+                [$academyId, $id, $tag]
             );
-            Http::json(['student' => $student, 'coachName' => $tag], 201);
+            $payload = [
+                'student' => $student,
+                'coachName' => $tag,
+                'created' => $created,
+            ];
+            if ($created) {
+                $payload['username'] = $student['username'];
+                $payload['password'] = $plainPassword;
+                $payload['message'] = 'Student login created. Give the username and password to the player.';
+            }
+            Http::json($payload, 201);
         } catch (PDOException $e) {
             if (str_contains($e->getMessage(), 'UNIQUE')) {
                 $existing = $this->db->get(
                     'SELECT is_active FROM academy_students WHERE academy_id = ? AND student_id = ?',
-                    [(int) $session['entity']['id'], $id]
+                    [$academyId, $id]
                 );
                 if ($existing) {
                     $this->db->run(
                         'UPDATE academy_students SET coach_name = ?, is_active = 1 WHERE academy_id = ? AND student_id = ?',
-                        [$tag, (int) $session['entity']['id'], $id]
+                        [$tag, $academyId, $id]
                     );
+                    $this->setOwnedStudentLoginActive($academyId, $id, true);
                     Http::json([
                         'student' => $student,
                         'coachName' => $tag,
@@ -854,8 +1057,9 @@ final class Api
         $body = Http::body();
         $coachName = $body['coachName'] ?? null;
         $active = $body['active'] ?? null;
+        $password = $body['password'] ?? null;
 
-        if ($coachName === null && $active === null) {
+        if ($coachName === null && $active === null && $password === null) {
             Http::error('Nothing to update', 400);
         }
 
@@ -880,9 +1084,21 @@ final class Api
         }
 
         if ($active !== null) {
+            $isActive = $active ? 1 : 0;
             $this->db->run(
                 'UPDATE academy_students SET is_active = ? WHERE academy_id = ? AND student_id = ?',
-                [$active ? 1 : 0, (int) $session['entity']['id'], $studentId]
+                [$isActive, (int) $session['entity']['id'], $studentId]
+            );
+            $this->setOwnedStudentLoginActive((int) $session['entity']['id'], $studentId, (bool) $active);
+        }
+
+        if ($password !== null) {
+            if (strlen((string) $password) < 4) {
+                Http::error('Password must be at least 4 characters', 400);
+            }
+            $this->db->run(
+                'UPDATE students SET password_hash = ? WHERE id = ?',
+                [hashPassword((string) $password), $studentId]
             );
         }
 
@@ -895,20 +1111,279 @@ final class Api
             'ok' => true,
             'coachName' => $updated['coach_name'],
             'isActive' => !empty($updated['is_active']),
+            'passwordUpdated' => $password !== null,
         ]);
     }
 
     private function academyRemoveStudent(int $studentId): void
     {
         $session = $this->auth->requireAcademy();
-        $changes = $this->db->changes(
-            'DELETE FROM academy_students WHERE academy_id = ? AND student_id = ?',
-            [(int) $session['entity']['id'], $studentId]
+        $academyId = (int) $session['entity']['id'];
+        $link = $this->db->get(
+            'SELECT id FROM academy_students WHERE academy_id = ? AND student_id = ?',
+            [$academyId, $studentId]
         );
-        if ($changes === 0) {
+        if (!$link) {
             Http::error('Student not linked to academy', 404);
         }
+
+        $this->setOwnedStudentLoginActive($academyId, $studentId, false);
+        $this->db->changes(
+            'DELETE FROM academy_students WHERE academy_id = ? AND student_id = ?',
+            [$academyId, $studentId]
+        );
         Http::json(['ok' => true]);
+    }
+
+    private function adminLogin(): void
+    {
+        $body = Http::body();
+        $username = trim((string) ($body['username'] ?? ''));
+        $password = (string) ($body['password'] ?? '');
+        if ($username === '' || $password === '') {
+            Http::error('Username and password required', 400);
+        }
+
+        $admin = $this->db->get('SELECT * FROM super_admins WHERE username = ?', [cleanUsername($username)]);
+        if (!$admin || !verifyPassword($password, $admin['password_hash'])) {
+            Http::error('Invalid username or password', 401);
+        }
+
+        Http::json([
+            'token' => $this->auth->createToken('admin', (int) $admin['id']),
+            'admin' => sanitizeAdmin($admin),
+        ]);
+    }
+
+    private function adminMe(): void
+    {
+        $session = $this->auth->requireAdmin();
+        Http::json(['admin' => $session['entity']]);
+    }
+
+    private function adminResetPassword(): void
+    {
+        $body = Http::body();
+        $username = trim((string) ($body['username'] ?? ''));
+        $adminId = (int) ($body['adminId'] ?? 0);
+        $newPassword = (string) ($body['newPassword'] ?? '');
+
+        if ($username === '' || $adminId < 1) {
+            Http::error('Username and Admin ID are required', 400);
+        }
+        $this->requireNewPassword($newPassword);
+
+        $clean = cleanUsername($username);
+        if ($clean === '') {
+            Http::error('Invalid username', 400);
+        }
+
+        $admin = $this->db->get(
+            'SELECT id FROM super_admins WHERE id = ? AND username = ?',
+            [$adminId, $clean]
+        );
+        if (!$admin) {
+            Http::error('Username and Admin ID do not match our records', 404);
+        }
+
+        $this->db->run(
+            'UPDATE super_admins SET password_hash = ? WHERE id = ?',
+            [hashPassword($newPassword), $adminId]
+        );
+
+        Http::json([
+            'ok' => true,
+            'message' => 'Password updated successfully. You can sign in with your new password.',
+        ]);
+    }
+
+    private function adminChangePassword(): void
+    {
+        $session = $this->auth->requireAdmin();
+        $body = Http::body();
+        $current = (string) ($body['currentPassword'] ?? '');
+        $newPassword = (string) ($body['newPassword'] ?? '');
+        $this->requireNewPassword($newPassword);
+
+        $admin = $this->db->get(
+            'SELECT password_hash FROM super_admins WHERE id = ?',
+            [(int) $session['entity']['id']]
+        );
+        if (!$admin || !verifyPassword($current, $admin['password_hash'])) {
+            Http::error('Current password is incorrect', 400);
+        }
+
+        $this->db->run(
+            'UPDATE super_admins SET password_hash = ? WHERE id = ?',
+            [hashPassword($newPassword), (int) $session['entity']['id']]
+        );
+
+        Http::json([
+            'ok' => true,
+            'message' => 'Password updated successfully.',
+        ]);
+    }
+
+    private function adminListAdmins(): void
+    {
+        $this->auth->requireAdmin();
+        $admins = $this->db->all(
+            'SELECT id, name, username, created_at FROM super_admins ORDER BY id ASC'
+        );
+        Http::json(['admins' => $admins]);
+    }
+
+    private function adminCreateAdmin(): void
+    {
+        $this->auth->requireAdmin();
+        $body = Http::body();
+        $name = trim((string) ($body['name'] ?? '')) ?: 'Super Admin';
+        $username = trim((string) ($body['username'] ?? ''));
+        $password = (string) ($body['password'] ?? '');
+
+        if ($username === '') {
+            Http::error('Username required', 400);
+        }
+        $this->requireNewPassword($password);
+
+        $clean = cleanUsername($username);
+        if ($clean === '') {
+            Http::error('Invalid username', 400);
+        }
+
+        try {
+            $id = $this->db->run(
+                'INSERT INTO super_admins (name, username, password_hash) VALUES (?, ?, ?)',
+                [$name, $clean, hashPassword($password)]
+            );
+            $admin = $this->db->get(
+                'SELECT id, name, username, created_at FROM super_admins WHERE id = ?',
+                [$id]
+            );
+            Http::json([
+                'admin' => $admin,
+                'username' => $clean,
+                'password' => $password,
+                'message' => 'Super admin login created. Save the username and password.',
+            ], 201);
+        } catch (PDOException $e) {
+            if (str_contains($e->getMessage(), 'UNIQUE')) {
+                Http::error('Username already taken', 409);
+            }
+            throw $e;
+        }
+    }
+
+    private function adminAcademies(): void
+    {
+        $this->auth->requireAdmin();
+        $academies = $this->db->all("
+            SELECT a.id, a.name, a.username, a.created_at, COALESCE(a.is_active, 1) as is_active,
+              (SELECT COUNT(*) FROM academy_students s WHERE s.academy_id = a.id) as student_count,
+              (SELECT COUNT(*) FROM academy_students s WHERE s.academy_id = a.id AND s.is_active = 1) as active_students
+            FROM academies a
+            ORDER BY a.created_at DESC, a.id DESC
+        ");
+        Http::json(['academies' => $academies]);
+    }
+
+    private function adminCreateAcademy(): void
+    {
+        $this->auth->requireAdmin();
+        $body = Http::body();
+        $name = trim((string) ($body['name'] ?? ''));
+        $username = trim((string) ($body['username'] ?? ''));
+        $password = (string) ($body['password'] ?? '');
+
+        if ($name === '') {
+            Http::error('Academy name required', 400);
+        }
+        if ($username === '') {
+            Http::error('Username required', 400);
+        }
+        if (strlen($password) < 4) {
+            Http::error('Password must be at least 4 characters', 400);
+        }
+
+        $clean = cleanUsername($username);
+        if ($clean === '') {
+            Http::error('Invalid username', 400);
+        }
+
+        try {
+            $id = $this->db->run(
+                'INSERT INTO academies (name, username, password_hash, is_active) VALUES (?, ?, ?, 1)',
+                [$name, $clean, hashPassword($password)]
+            );
+            $academy = $this->db->get(
+                'SELECT id, name, username, created_at, is_active FROM academies WHERE id = ?',
+                [$id]
+            );
+            Http::json([
+                'academy' => $academy,
+                'username' => $clean,
+                'password' => $password,
+                'message' => 'Academy login created. Give the username and password to the academy.',
+            ], 201);
+        } catch (PDOException $e) {
+            if (str_contains($e->getMessage(), 'UNIQUE')) {
+                Http::error('Username already taken', 409);
+            }
+            throw $e;
+        }
+    }
+
+    private function adminPatchAcademy(int $academyId): void
+    {
+        $this->auth->requireAdmin();
+        $body = Http::body();
+        $academy = $this->db->get('SELECT id FROM academies WHERE id = ?', [$academyId]);
+        if (!$academy) {
+            Http::error('Academy not found', 404);
+        }
+
+        $name = $body['name'] ?? null;
+        $password = $body['password'] ?? null;
+        $active = $body['active'] ?? null;
+
+        if ($name === null && $password === null && $active === null) {
+            Http::error('Nothing to update', 400);
+        }
+
+        if ($name !== null) {
+            $cleanName = trim((string) $name);
+            if ($cleanName === '') {
+                Http::error('Academy name required', 400);
+            }
+            $this->db->run('UPDATE academies SET name = ? WHERE id = ?', [$cleanName, $academyId]);
+        }
+
+        if ($password !== null) {
+            if (strlen((string) $password) < 4) {
+                Http::error('Password must be at least 4 characters', 400);
+            }
+            $this->db->run(
+                'UPDATE academies SET password_hash = ? WHERE id = ?',
+                [hashPassword((string) $password), $academyId]
+            );
+        }
+
+        if ($active !== null) {
+            $this->db->run(
+                'UPDATE academies SET is_active = ? WHERE id = ?',
+                [$active ? 1 : 0, $academyId]
+            );
+        }
+
+        $updated = $this->db->get(
+            'SELECT id, name, username, created_at, COALESCE(is_active, 1) as is_active FROM academies WHERE id = ?',
+            [$academyId]
+        );
+        Http::json([
+            'ok' => true,
+            'academy' => $updated,
+            'passwordUpdated' => $password !== null,
+        ]);
     }
 
     private function academyStudentStats(int $studentId): void
@@ -1105,26 +1580,6 @@ final class Api
             [(int) $session['entity']['id']]
         );
 
-        // Pause all running timers (player left puzzle screen)
-        foreach ($cycles as $c) {
-            if (!empty($c['cycle_resumed_at'])) {
-                $this->pauseCycleTimer((int) $c['id']);
-            }
-        }
-
-        // Re-fetch after pausing to get updated accumulated values
-        $cycles = $this->db->all(
-            "SELECT c.*,
-              (SELECT COUNT(*) FROM puzzle_attempts pa WHERE pa.cycle_id = c.id AND pa.completed = 1) as puzzles_completed,
-              (SELECT SUM(wrong_moves) FROM puzzle_attempts pa WHERE pa.cycle_id = c.id) as total_wrong_moves
-             FROM cycles c
-             WHERE c.student_id = ? AND c.completed_at IS NULL
-               AND c.section_filter IN ('Easy', 'Intermediate', 'Advanced')
-             ORDER BY CASE c.section_filter
-               WHEN 'Easy' THEN 0 WHEN 'Intermediate' THEN 1 WHEN 'Advanced' THEN 2 ELSE 3 END",
-            [(int) $session['entity']['id']]
-        );
-
         $stillActive = [];
         foreach ($cycles as $cycle) {
             $updated = $this->autoCompleteCycleIfDone((int) $cycle['id']);
@@ -1158,14 +1613,17 @@ final class Api
             Http::error('Access denied', 403);
         }
 
-        $this->tickCycleTimer($cycleId);
-
         $existing = $this->db->get(
             'SELECT * FROM puzzle_attempts WHERE cycle_id = ? AND puzzle_id = ? AND completed = 0',
             [$cycleId, $puzzleId]
         );
 
         if ($existing) {
+            $this->db->run(
+                "UPDATE puzzle_attempts SET started_at = datetime('now') WHERE id = ?",
+                [(int) $existing['id']]
+            );
+            $existing['started_at'] = date('Y-m-d H:i:s');
             $puzzle = $this->findPuzzle($puzzleId);
             $synced = $puzzle
                 ? $this->chess->syncAttemptToPlayerTurn($this->db, $puzzle, $cycle, $existing)
@@ -1205,8 +1663,6 @@ final class Api
         if ((int) $cycle['student_id'] !== (int) $session['entity']['id']) {
             Http::error('Access denied', 403);
         }
-
-        $this->tickCycleTimer((int) $cycle['id']);
 
         $puzzle = $this->findPuzzle((int) $attempt['puzzle_id']);
         if (!$puzzle) {
@@ -1402,15 +1858,23 @@ final class Api
             Http::error('Access denied', 403);
         }
 
-        $this->tickCycleTimer((int) $cycle['id']);
-
         $body = Http::body();
         $timeMs = max(0, (int) ($body['timeMs'] ?? 0));
+        if ($timeMs < 1 && !empty($attempt['started_at'])) {
+            $elapsed = $this->db->get(
+                "SELECT CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER) as elapsed_ms
+                 FROM puzzle_attempts WHERE id = ?",
+                [$attemptId]
+            );
+            $timeMs = max(0, (int) ($elapsed['elapsed_ms'] ?? 0));
+        }
 
         $this->db->run(
             "UPDATE puzzle_attempts SET completed = 1, completed_at = datetime('now'), time_ms = ? WHERE id = ?",
             [$timeMs, $attemptId]
         );
+
+        $this->finalizeCycleTime((int) $cycle['id']);
 
         $completed = $this->db->get('SELECT * FROM puzzle_attempts WHERE id = ?', [$attemptId]);
 
@@ -1427,7 +1891,6 @@ final class Api
             Http::error('Access denied', 403);
         }
 
-        // Finalize cycle time: flush any running session into accumulated
         $finalTimeMs = $this->finalizeCycleTime($cycleId);
 
         $this->db->run(
@@ -1449,12 +1912,6 @@ final class Api
         }
         if ((int) $cycle['student_id'] !== (int) $session['entity']['id']) {
             Http::error('Access denied', 403);
-        }
-
-        // Pause timer (player left puzzle screen)
-        if (!empty($cycle['cycle_resumed_at'])) {
-            $this->pauseCycleTimer($cycleId);
-            $cycle = $this->db->get('SELECT * FROM cycles WHERE id = ?', [$cycleId]);
         }
 
         $cycle = $this->autoCompleteCycleIfDone($cycleId) ?? $cycle;
@@ -1481,8 +1938,6 @@ final class Api
         if (!$cycle || (int) $cycle['student_id'] !== (int) $session['entity']['id']) {
             Http::error('Access denied', 403);
         }
-
-        $this->tickCycleTimer($cycleId);
 
         $puzzle = $this->findPuzzle($puzzleId);
         if (!$puzzle) {
@@ -1614,5 +2069,1185 @@ final class Api
         }
 
         Http::json(['student' => $student, 'cycles' => $cycleResults, 'totalTime' => $totalTime]);
+    }
+
+    private function requireOpeningColor(string $color): string
+    {
+        $color = strtolower(trim($color));
+        if (!in_array($color, ['white', 'black'], true)) {
+            Http::error('Choose White or Black for this opening.', 400);
+        }
+        return $color;
+    }
+
+    private function academyOpeningOrFail(int $openingId, int $academyId): array
+    {
+        $opening = $this->db->get(
+            'SELECT * FROM openings WHERE id = ? AND academy_id = ?',
+            [$openingId, $academyId]
+        );
+        if (!$opening) {
+            Http::error('Opening not found', 404);
+        }
+        return $opening;
+    }
+
+    private function academyChapterOrFail(int $chapterId, int $academyId): array
+    {
+        $chapter = $this->db->get(
+            'SELECT c.*, o.academy_id, o.color_group, o.name as opening_name
+             FROM opening_chapters c
+             JOIN openings o ON o.id = c.opening_id
+             WHERE c.id = ? AND o.academy_id = ?',
+            [$chapterId, $academyId]
+        );
+        if (!$chapter) {
+            Http::error('Chapter not found', 404);
+        }
+        return $chapter;
+    }
+
+    private function studentAssignedOpening(int $studentId, int $openingId): ?array
+    {
+        return $this->db->get(
+            'SELECT o.*
+             FROM openings o
+             JOIN opening_assignments a ON a.opening_id = o.id
+             WHERE o.id = ? AND a.student_id = ?',
+            [$openingId, $studentId]
+        );
+    }
+
+    private function openingChapterCount(int $openingId): int
+    {
+        $row = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_chapters WHERE opening_id = ?',
+            [$openingId]
+        );
+        return (int) ($row['c'] ?? 0);
+    }
+
+    private function openingAssignedCount(int $openingId): int
+    {
+        $row = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_assignments WHERE opening_id = ?',
+            [$openingId]
+        );
+        return (int) ($row['c'] ?? 0);
+    }
+
+    private function openingChapters(int $openingId): array
+    {
+        return $this->db->all(
+            'SELECT * FROM opening_chapters WHERE opening_id = ? ORDER BY sort_order, id',
+            [$openingId]
+        );
+    }
+
+    private function serializeOpening(array $opening, bool $includeChapters, bool $includePgn): array
+    {
+        $payload = [
+            'id' => (int) $opening['id'],
+            'academyId' => (int) $opening['academy_id'],
+            'colorGroup' => $opening['color_group'],
+            'name' => $opening['name'],
+            'notes' => $opening['notes'] ?? '',
+            'createdAt' => $opening['created_at'] ?? null,
+            'chapterCount' => $this->openingChapterCount((int) $opening['id']),
+            'assignedCount' => $this->openingAssignedCount((int) $opening['id']),
+        ];
+        if ($includeChapters) {
+            $payload['chapters'] = array_map(
+                fn (array $chapter) => $this->openings->publicChapter($chapter, $includePgn),
+                $this->openingChapters((int) $opening['id'])
+            );
+        }
+        return $payload;
+    }
+
+    private function studentOpeningStats(int $studentId, int $openingId): array
+    {
+        $chapterCount = $this->openingChapterCount($openingId);
+        $testsTaken = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_tests WHERE student_id = ? AND opening_id = ? AND completed_at IS NOT NULL',
+            [$studentId, $openingId]
+        );
+        $chaptersTested = $this->db->get(
+            'SELECT COUNT(DISTINCT chapter_id) as c FROM opening_tests
+             WHERE student_id = ? AND opening_id = ? AND completed_at IS NOT NULL',
+            [$studentId, $openingId]
+        );
+        $chaptersPassed = $this->db->get(
+            'SELECT COUNT(DISTINCT chapter_id) as c FROM opening_tests
+             WHERE student_id = ? AND opening_id = ? AND completed_at IS NOT NULL AND passed = 1',
+            [$studentId, $openingId]
+        );
+        $wrong = $this->db->get(
+            'SELECT COALESCE(SUM(wrong_moves), 0) as c FROM opening_tests
+             WHERE student_id = ? AND opening_id = ? AND completed_at IS NOT NULL',
+            [$studentId, $openingId]
+        );
+        $last = $this->db->get(
+            'SELECT completed_at FROM opening_tests
+             WHERE student_id = ? AND opening_id = ? AND completed_at IS NOT NULL
+             ORDER BY completed_at DESC LIMIT 1',
+            [$studentId, $openingId]
+        );
+
+        return [
+            'chapterCount' => $chapterCount,
+            'testsTaken' => (int) ($testsTaken['c'] ?? 0),
+            'chaptersTested' => (int) ($chaptersTested['c'] ?? 0),
+            'chaptersPassed' => (int) ($chaptersPassed['c'] ?? 0),
+            'wrongMoves' => (int) ($wrong['c'] ?? 0),
+            'testTaken' => (int) ($testsTaken['c'] ?? 0) > 0,
+            'lastTestAt' => $last['completed_at'] ?? null,
+        ];
+    }
+
+    private function academyParsePgn(): void
+    {
+        $this->auth->requireAcademy();
+        $body = Http::body();
+        try {
+            $parsed = $this->openings->parsePgn((string) ($body['pgn'] ?? ''));
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        Http::json($parsed);
+    }
+
+    private function academyOpenings(): void
+    {
+        $session = $this->auth->requireAcademy();
+        $academyId = (int) $session['entity']['id'];
+        $rows = $this->db->all(
+            "SELECT * FROM openings WHERE academy_id = ?
+             ORDER BY CASE color_group WHEN 'white' THEN 0 ELSE 1 END, name",
+            [$academyId]
+        );
+        Http::json([
+            'openings' => array_map(fn (array $row) => $this->serializeOpening($row, true, true), $rows),
+        ]);
+    }
+
+    private function academyCreateOpening(): void
+    {
+        $session = $this->auth->requireAcademy();
+        $body = Http::body();
+        $name = trim((string) ($body['name'] ?? ''));
+        $color = $this->requireOpeningColor((string) ($body['colorGroup'] ?? $body['color'] ?? ''));
+        $notes = trim((string) ($body['notes'] ?? ''));
+        if ($name === '') {
+            Http::error('Opening name is required', 400);
+        }
+        $id = $this->db->run(
+            'INSERT INTO openings (academy_id, color_group, name, notes) VALUES (?, ?, ?, ?)',
+            [(int) $session['entity']['id'], $color, $name, $notes]
+        );
+        $opening = $this->db->get('SELECT * FROM openings WHERE id = ?', [$id]);
+        Http::json($this->serializeOpening($opening, true, true), 201);
+    }
+
+    private function academyGetOpening(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $opening = $this->academyOpeningOrFail($openingId, (int) $session['entity']['id']);
+        $assigned = $this->db->all(
+            'SELECT s.id, s.name, s.username
+             FROM opening_assignments a
+             JOIN students s ON s.id = a.student_id
+             WHERE a.opening_id = ?
+             ORDER BY s.name',
+            [$openingId]
+        );
+        Http::json(array_merge($this->serializeOpening($opening, true, true), [
+            'assignedStudents' => $assigned,
+        ]));
+    }
+
+    private function academyPatchOpening(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $opening = $this->academyOpeningOrFail($openingId, (int) $session['entity']['id']);
+        $body = Http::body();
+        $name = array_key_exists('name', $body) ? trim((string) $body['name']) : (string) $opening['name'];
+        $notes = array_key_exists('notes', $body) ? trim((string) $body['notes']) : (string) ($opening['notes'] ?? '');
+        $color = array_key_exists('colorGroup', $body) || array_key_exists('color', $body)
+            ? $this->requireOpeningColor((string) ($body['colorGroup'] ?? $body['color'] ?? ''))
+            : (string) $opening['color_group'];
+        if ($name === '') {
+            Http::error('Opening name is required', 400);
+        }
+        $this->db->run(
+            'UPDATE openings SET name = ?, notes = ?, color_group = ? WHERE id = ?',
+            [$name, $notes, $color, $openingId]
+        );
+        $updated = $this->db->get('SELECT * FROM openings WHERE id = ?', [$openingId]);
+        Http::json($this->serializeOpening($updated, true, true));
+    }
+
+    private function academyDeleteOpening(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $this->academyOpeningOrFail($openingId, (int) $session['entity']['id']);
+        $this->db->run('DELETE FROM opening_tests WHERE opening_id = ?', [$openingId]);
+        $this->db->run('DELETE FROM opening_assignments WHERE opening_id = ?', [$openingId]);
+        $this->db->run('DELETE FROM opening_chapters WHERE opening_id = ?', [$openingId]);
+        $this->db->run('DELETE FROM openings WHERE id = ?', [$openingId]);
+        Http::json(['ok' => true]);
+    }
+
+    private function academyAddChapter(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $opening = $this->academyOpeningOrFail($openingId, (int) $session['entity']['id']);
+        $body = Http::body();
+        $title = trim((string) ($body['title'] ?? ''));
+        $pgn = (string) ($body['pgn'] ?? '');
+        try {
+            $parsed = $this->openings->parsePgn($pgn);
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $count = $this->openingChapterCount($openingId);
+        if ($title === '') {
+            $title = 'Chapter ' . ($count + 1);
+        }
+        $id = $this->db->run(
+            'INSERT INTO opening_chapters (opening_id, title, pgn, start_fen, moves_json, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+            [$openingId, $title, trim($pgn), $parsed['startFen'], json_encode($parsed['moves']), $count]
+        );
+        $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$id]);
+        Http::json([
+            'opening' => $this->serializeOpening($opening, true, true),
+            'chapter' => $this->openings->publicChapter($chapter, true),
+        ], 201);
+    }
+
+    private function academyPatchChapter(int $chapterId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $chapter = $this->academyChapterOrFail($chapterId, (int) $session['entity']['id']);
+        $body = Http::body();
+        $title = array_key_exists('title', $body) ? trim((string) $body['title']) : (string) $chapter['title'];
+        $pgn = array_key_exists('pgn', $body) ? (string) $body['pgn'] : (string) $chapter['pgn'];
+        $sortOrder = array_key_exists('sortOrder', $body) ? (int) $body['sortOrder'] : (int) $chapter['sort_order'];
+        if ($title === '') {
+            Http::error('Chapter name is required', 400);
+        }
+        try {
+            $parsed = $this->openings->parsePgn($pgn);
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $this->db->run(
+            'UPDATE opening_chapters SET title = ?, pgn = ?, start_fen = ?, moves_json = ?, sort_order = ? WHERE id = ?',
+            [$title, trim($pgn), $parsed['startFen'], json_encode($parsed['moves']), $sortOrder, $chapterId]
+        );
+        $updated = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$chapterId]);
+        Http::json($this->openings->publicChapter($updated, true));
+    }
+
+    private function academyDeleteChapter(int $chapterId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $chapter = $this->academyChapterOrFail($chapterId, (int) $session['entity']['id']);
+        $this->db->run('DELETE FROM opening_tests WHERE chapter_id = ?', [$chapterId]);
+        $this->db->run('DELETE FROM opening_chapters WHERE id = ?', [$chapterId]);
+        $opening = $this->db->get('SELECT * FROM openings WHERE id = ?', [$chapter['opening_id']]);
+        Http::json($this->serializeOpening($opening, true, true));
+    }
+
+    private function academyAssignOpening(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $academyId = (int) $session['entity']['id'];
+        $this->academyOpeningOrFail($openingId, $academyId);
+        $body = Http::body();
+        $studentIds = $body['studentIds'] ?? [];
+        if (!is_array($studentIds)) {
+            Http::error('studentIds must be a list', 400);
+        }
+        $replace = !empty($body['replace']);
+        if ($replace) {
+            $this->db->run('DELETE FROM opening_assignments WHERE opening_id = ?', [$openingId]);
+        }
+        $assigned = [];
+        foreach ($studentIds as $rawId) {
+            $studentId = (int) $rawId;
+            if ($studentId < 1 || !$this->academyHasStudent($academyId, $studentId)) {
+                continue;
+            }
+            $this->db->run(
+                'INSERT OR IGNORE INTO opening_assignments (opening_id, student_id, academy_id) VALUES (?, ?, ?)',
+                [$openingId, $studentId, $academyId]
+            );
+            $assigned[] = $studentId;
+        }
+        if (isset($body['removeStudentIds']) && is_array($body['removeStudentIds'])) {
+            foreach ($body['removeStudentIds'] as $rawId) {
+                $studentId = (int) $rawId;
+                $this->db->run(
+                    'DELETE FROM opening_assignments WHERE opening_id = ? AND student_id = ? AND academy_id = ?',
+                    [$openingId, $studentId, $academyId]
+                );
+            }
+        }
+        $students = $this->db->all(
+            'SELECT s.id, s.name, s.username
+             FROM opening_assignments a
+             JOIN students s ON s.id = a.student_id
+             WHERE a.opening_id = ?
+             ORDER BY s.name',
+            [$openingId]
+        );
+        Http::json(['assignedStudents' => $students, 'added' => $assigned]);
+    }
+
+    private function academyOpeningProgress(int $openingId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $this->academyOpeningOrFail($openingId, (int) $session['entity']['id']);
+        $rows = $this->db->all(
+            'SELECT s.id as student_id, s.name, s.username, a.assigned_at
+             FROM opening_assignments a
+             JOIN students s ON s.id = a.student_id
+             WHERE a.opening_id = ?
+             ORDER BY s.name',
+            [$openingId]
+        );
+        $progress = [];
+        foreach ($rows as $row) {
+            $stats = $this->studentOpeningStats((int) $row['student_id'], $openingId);
+            $progress[] = array_merge($row, $stats);
+        }
+        Http::json(['progress' => $progress]);
+    }
+
+    private function studentOpenings(): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $rows = $this->db->all(
+            "SELECT o.*
+             FROM openings o
+             JOIN opening_assignments a ON a.opening_id = o.id
+             WHERE a.student_id = ?
+             ORDER BY CASE o.color_group WHEN 'white' THEN 0 ELSE 1 END, o.name",
+            [$studentId]
+        );
+        $openings = [];
+        foreach ($rows as $row) {
+            $openings[] = array_merge(
+                $this->serializeOpening($row, false, false),
+                $this->studentOpeningStats($studentId, (int) $row['id'])
+            );
+        }
+        Http::json(['openings' => $openings]);
+    }
+
+    private function studentGetOpening(int $openingId): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $opening = $this->studentAssignedOpening($studentId, $openingId);
+        if (!$opening) {
+            Http::error('This opening is not assigned to you', 403);
+        }
+        $chapters = [];
+        foreach ($this->openingChapters($openingId) as $chapter) {
+            $latest = $this->db->get(
+                'SELECT * FROM opening_tests
+                 WHERE student_id = ? AND chapter_id = ?
+                 ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
+                 LIMIT 1',
+                [$studentId, $chapter['id']]
+            );
+            $completedCount = $this->db->get(
+                'SELECT COUNT(*) as c FROM opening_tests
+                 WHERE student_id = ? AND chapter_id = ? AND completed_at IS NOT NULL',
+                [$studentId, $chapter['id']]
+            );
+            $chapters[] = array_merge($this->openings->publicChapter($chapter, true), [
+                'testTaken' => (int) ($completedCount['c'] ?? 0) > 0,
+                'testsTaken' => (int) ($completedCount['c'] ?? 0),
+                'lastPassed' => $latest ? (int) ($latest['passed'] ?? 0) === 1 && !empty($latest['completed_at']) : false,
+                'lastWrongMoves' => $latest ? (int) ($latest['wrong_moves'] ?? 0) : 0,
+                'lastCompletedAt' => $latest['completed_at'] ?? null,
+            ]);
+        }
+        Http::json(array_merge($this->serializeOpening($opening, false, false), [
+            'chapters' => $chapters,
+        ], $this->studentOpeningStats($studentId, $openingId)));
+    }
+
+    private function studentOpeningTests(): void
+    {
+        $session = $this->auth->requireStudent();
+        $rows = $this->db->all(
+            'SELECT t.*, o.name as opening_name, o.color_group, c.title as chapter_title
+             FROM opening_tests t
+             JOIN openings o ON o.id = t.opening_id
+             JOIN opening_chapters c ON c.id = t.chapter_id
+             WHERE t.student_id = ?
+             ORDER BY t.started_at DESC',
+            [(int) $session['entity']['id']]
+        );
+        Http::json(['tests' => $rows]);
+    }
+
+    private function openingTestPayload(array $test, array $opening, array $chapter): array
+    {
+        $playerColor = $this->openings->playerColor((string) $opening['color_group']);
+        $index = (int) $test['current_move_index'];
+        $fen = $this->openings->fenAt($chapter, $index);
+        $completed = !empty($test['completed_at']);
+        return [
+            'test' => [
+                'id' => (int) $test['id'],
+                'openingId' => (int) $test['opening_id'],
+                'chapterId' => (int) $test['chapter_id'],
+                'currentMoveIndex' => $index,
+                'wrongMoves' => (int) $test['wrong_moves'],
+                'correctMoves' => (int) $test['correct_moves'],
+                'totalPlayerMoves' => (int) $test['total_player_moves'],
+                'completed' => $completed,
+                'passed' => (int) ($test['passed'] ?? 0) === 1,
+                'startedAt' => $test['started_at'] ?? null,
+                'completedAt' => $test['completed_at'] ?? null,
+            ],
+            'opening' => [
+                'id' => (int) $opening['id'],
+                'name' => $opening['name'],
+                'colorGroup' => $opening['color_group'],
+            ],
+            'chapter' => [
+                'id' => (int) $chapter['id'],
+                'title' => $chapter['title'],
+                'plyCount' => count($this->openings->chapterMoves($chapter)),
+            ],
+            'playerColor' => $playerColor,
+            'fen' => $fen,
+            'lastMove' => $this->openings->lastMoveAt($chapter, $index),
+            'legalMoves' => $completed ? [] : $this->openings->legalMoves($fen),
+            'turn' => explode(' ', $fen)[1] ?? 'w',
+        ];
+    }
+
+    private function startOpeningTest(): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $body = Http::body();
+        $chapterId = (int) ($body['chapterId'] ?? 0);
+        $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$chapterId]);
+        if (!$chapter) {
+            Http::error('Chapter not found', 404);
+        }
+        $opening = $this->studentAssignedOpening($studentId, (int) $chapter['opening_id']);
+        if (!$opening) {
+            Http::error('This opening is not assigned to you', 403);
+        }
+
+        $existing = $this->db->get(
+            'SELECT * FROM opening_tests
+             WHERE student_id = ? AND chapter_id = ? AND completed_at IS NULL
+             ORDER BY id DESC LIMIT 1',
+            [$studentId, $chapterId]
+        );
+        if ($existing) {
+            Http::json($this->openingTestPayload($existing, $opening, $chapter));
+            return;
+        }
+
+        $playerColor = $this->openings->playerColor((string) $opening['color_group']);
+        $skipped = $this->openings->skipOpponentMoves($chapter, $playerColor, 0);
+        $totalPlayer = $this->openings->countPlayerMoves($this->openings->chapterMoves($chapter), $playerColor);
+        $id = $this->db->run(
+            'INSERT INTO opening_tests
+                (student_id, opening_id, chapter_id, current_move_index, total_player_moves)
+             VALUES (?, ?, ?, ?, ?)',
+            [$studentId, (int) $opening['id'], $chapterId, (int) $skipped['index'], $totalPlayer]
+        );
+        if (!empty($skipped['completed'])) {
+            $this->completeOpeningTest($id);
+        }
+        $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$id]);
+        Http::json($this->openingTestPayload($test, $opening, $chapter), 201);
+    }
+
+    private function getOpeningTest(int $testId): void
+    {
+        $session = $this->auth->requireStudent();
+        $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+        if (!$test || (int) $test['student_id'] !== (int) $session['entity']['id']) {
+            Http::error('Test not found', 404);
+        }
+        $opening = $this->db->get('SELECT * FROM openings WHERE id = ?', [$test['opening_id']]);
+        $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$test['chapter_id']]);
+        Http::json($this->openingTestPayload($test, $opening, $chapter));
+    }
+
+    private function playOpeningTest(int $testId): void
+    {
+        $session = $this->auth->requireStudent();
+        $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+        if (!$test || (int) $test['student_id'] !== (int) $session['entity']['id']) {
+            Http::error('Test not found', 404);
+        }
+        if (!empty($test['completed_at'])) {
+            $opening = $this->db->get('SELECT * FROM openings WHERE id = ?', [$test['opening_id']]);
+            $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$test['chapter_id']]);
+            Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+                'correct' => true,
+                'completed' => true,
+            ]));
+            return;
+        }
+
+        $opening = $this->db->get('SELECT * FROM openings WHERE id = ?', [$test['opening_id']]);
+        $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$test['chapter_id']]);
+        $moves = $this->openings->chapterMoves($chapter);
+        $playerColor = $this->openings->playerColor((string) $opening['color_group']);
+        $index = (int) $test['current_move_index'];
+        $skipped = $this->openings->skipOpponentMoves($chapter, $playerColor, $index);
+        $index = (int) $skipped['index'];
+        if ($index !== (int) $test['current_move_index']) {
+            $this->db->run('UPDATE opening_tests SET current_move_index = ? WHERE id = ?', [$index, $testId]);
+            $test['current_move_index'] = $index;
+        }
+
+        if ($index >= count($moves)) {
+            $this->completeOpeningTest($testId);
+            $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+            Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+                'correct' => true,
+                'completed' => true,
+            ]));
+            return;
+        }
+
+        $expected = $moves[$index];
+        if (($expected['color'] ?? '') !== $playerColor) {
+            Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+                'correct' => false,
+                'opponentTurn' => true,
+            ]));
+            return;
+        }
+
+        $body = Http::body();
+        $from = strtolower((string) ($body['from'] ?? ''));
+        $to = strtolower((string) ($body['to'] ?? ''));
+        $promotion = strtolower((string) ($body['promotion'] ?? 'q'));
+        $fen = $this->openings->fenAt($chapter, $index);
+        $chess = new Chess();
+        $chess->load($fen);
+        $played = $chess->move(['from' => $from, 'to' => $to, 'promotion' => $promotion]);
+        if (!$played) {
+            Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+                'correct' => false,
+                'illegal' => true,
+            ]));
+            return;
+        }
+
+        $expectedFrom = strtolower((string) ($expected['from'] ?? ''));
+        $expectedTo = strtolower((string) ($expected['to'] ?? ''));
+        $matched = $from === $expectedFrom && $to === $expectedTo;
+        if (!$matched) {
+            $this->db->run('UPDATE opening_tests SET wrong_moves = wrong_moves + 1 WHERE id = ?', [$testId]);
+            $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+            Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+                'correct' => false,
+                'message' => 'Wrong move. Try again.',
+            ]));
+            return;
+        }
+
+        $next = $index + 1;
+        $after = $this->openings->skipOpponentMoves($chapter, $playerColor, $next);
+        $completed = !empty($after['completed']);
+        $this->db->run(
+            'UPDATE opening_tests SET current_move_index = ?, correct_moves = correct_moves + 1 WHERE id = ?',
+            [(int) $after['index'], $testId]
+        );
+        if ($completed) {
+            $this->completeOpeningTest($testId);
+        }
+        $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+        Http::json(array_merge($this->openingTestPayload($test, $opening, $chapter), [
+            'correct' => true,
+            'completed' => $completed,
+            'autoMove' => $after['lastMove'],
+        ]));
+    }
+
+    private function completeOpeningTest(int $testId): void
+    {
+        $test = $this->db->get('SELECT * FROM opening_tests WHERE id = ?', [$testId]);
+        if (!$test || !empty($test['completed_at'])) {
+            return;
+        }
+        $passed = (int) $test['wrong_moves'] === 0 ? 1 : 0;
+        $this->db->run(
+            "UPDATE opening_tests
+             SET completed_at = datetime('now'),
+                 passed = ?,
+                 time_ms = CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER)
+             WHERE id = ?",
+            [$passed, $testId]
+        );
+    }
+
+    private function academyEndgameCategoryOrFail(int $id, int $academyId): array
+    {
+        $row = $this->db->get(
+            'SELECT * FROM endgame_categories WHERE id = ? AND academy_id = ?',
+            [$id, $academyId]
+        );
+        if (!$row) {
+            Http::error('Endgame category not found', 404);
+        }
+        return $row;
+    }
+
+    private function serializeEndgameCategory(array $category, bool $deep): array
+    {
+        $id = (int) $category['id'];
+        $subs = $this->db->all(
+            'SELECT * FROM endgame_subcategories WHERE category_id = ? ORDER BY sort_order, id',
+            [$id]
+        );
+        $chapterCount = 0;
+        $payloadSubs = [];
+        foreach ($subs as $sub) {
+            $chapters = $this->db->all(
+                'SELECT * FROM endgame_chapters WHERE subcategory_id = ? ORDER BY sort_order, id',
+                [$sub['id']]
+            );
+            $chapterCount += count($chapters);
+            $item = [
+                'id' => (int) $sub['id'],
+                'name' => $sub['name'],
+                'chapterCount' => count($chapters),
+            ];
+            if ($deep) {
+                $item['chapters'] = array_map(fn (array $c) => $this->serializeEndgameChapter($c), $chapters);
+            }
+            $payloadSubs[] = $item;
+        }
+        $assigned = $this->db->get(
+            'SELECT COUNT(*) as c FROM endgame_assignments WHERE category_id = ?',
+            [$id]
+        );
+        return [
+            'id' => $id,
+            'name' => $category['name'],
+            'notes' => $category['notes'] ?? '',
+            'subcategoryCount' => count($subs),
+            'chapterCount' => $chapterCount,
+            'assignedCount' => (int) ($assigned['c'] ?? 0),
+            'subcategories' => $payloadSubs,
+        ];
+    }
+
+    private function serializeEndgameChapter(array $chapter): array
+    {
+        return [
+            'id' => (int) $chapter['id'],
+            'subcategoryId' => (int) $chapter['subcategory_id'],
+            'title' => $chapter['title'],
+            'fen' => $chapter['fen'],
+            'goal' => $chapter['goal'],
+            'goalLabel' => $this->endgames->goalLabel((string) $chapter['goal']),
+            'notes' => $chapter['notes'] ?? '',
+            'playerColor' => $this->endgames->playerColor((string) $chapter['goal'], (string) $chapter['fen']),
+        ];
+    }
+
+    private function studentEndgameStats(int $studentId, int $categoryId): array
+    {
+        $total = $this->db->get(
+            'SELECT COUNT(*) as c FROM endgame_chapters ch
+             JOIN endgame_subcategories s ON s.id = ch.subcategory_id
+             WHERE s.category_id = ?',
+            [$categoryId]
+        );
+        $passed = $this->db->get(
+            'SELECT COUNT(DISTINCT chapter_id) as c FROM endgame_attempts
+             WHERE student_id = ? AND category_id = ? AND mode = \'test\' AND passed = 1 AND completed_at IS NOT NULL',
+            [$studentId, $categoryId]
+        );
+        $tested = $this->db->get(
+            'SELECT COUNT(DISTINCT chapter_id) as c FROM endgame_attempts
+             WHERE student_id = ? AND category_id = ? AND mode = \'test\' AND completed_at IS NOT NULL',
+            [$studentId, $categoryId]
+        );
+        return [
+            'chapterCount' => (int) ($total['c'] ?? 0),
+            'chaptersPassed' => (int) ($passed['c'] ?? 0),
+            'chaptersTested' => (int) ($tested['c'] ?? 0),
+            'testTaken' => (int) ($tested['c'] ?? 0) > 0,
+        ];
+    }
+
+    private function chapterPassed(int $studentId, int $chapterId): bool
+    {
+        $row = $this->db->get(
+            'SELECT 1 FROM endgame_attempts
+             WHERE student_id = ? AND chapter_id = ? AND mode = \'test\' AND passed = 1 AND completed_at IS NOT NULL
+             LIMIT 1',
+            [$studentId, $chapterId]
+        );
+        return $row !== null;
+    }
+
+    private function academyEndgames(): void
+    {
+        $session = $this->auth->requireAcademy();
+        $rows = $this->db->all(
+            'SELECT * FROM endgame_categories WHERE academy_id = ? ORDER BY sort_order, name',
+            [(int) $session['entity']['id']]
+        );
+        Http::json([
+            'categories' => array_map(fn (array $r) => $this->serializeEndgameCategory($r, true), $rows),
+            'goals' => array_map(
+                fn (string $g) => ['id' => $g, 'label' => $this->endgames->goalLabel($g)],
+                EndgameService::GOALS
+            ),
+            'levels' => $this->endgames->levels(),
+        ]);
+    }
+
+    private function academyCreateEndgameCategory(): void
+    {
+        $session = $this->auth->requireAcademy();
+        $name = trim((string) (Http::body()['name'] ?? ''));
+        if ($name === '') {
+            Http::error('Category name is required', 400);
+        }
+        $id = $this->db->run(
+            'INSERT INTO endgame_categories (academy_id, name, notes) VALUES (?, ?, ?)',
+            [(int) $session['entity']['id'], $name, trim((string) (Http::body()['notes'] ?? ''))]
+        );
+        Http::json($this->serializeEndgameCategory(
+            $this->db->get('SELECT * FROM endgame_categories WHERE id = ?', [$id]),
+            true
+        ), 201);
+    }
+
+    private function academyGetEndgameCategory(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $category = $this->academyEndgameCategoryOrFail($id, (int) $session['entity']['id']);
+        $assigned = $this->db->all(
+            'SELECT s.id, s.name, s.username FROM endgame_assignments a
+             JOIN students s ON s.id = a.student_id WHERE a.category_id = ? ORDER BY s.name',
+            [$id]
+        );
+        Http::json(array_merge($this->serializeEndgameCategory($category, true), [
+            'assignedStudents' => $assigned,
+        ]));
+    }
+
+    private function academyPatchEndgameCategory(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $category = $this->academyEndgameCategoryOrFail($id, (int) $session['entity']['id']);
+        $body = Http::body();
+        $name = array_key_exists('name', $body) ? trim((string) $body['name']) : (string) $category['name'];
+        $notes = array_key_exists('notes', $body) ? trim((string) $body['notes']) : (string) ($category['notes'] ?? '');
+        if ($name === '') {
+            Http::error('Category name is required', 400);
+        }
+        $this->db->run('UPDATE endgame_categories SET name = ?, notes = ? WHERE id = ?', [$name, $notes, $id]);
+        Http::json($this->serializeEndgameCategory($this->db->get('SELECT * FROM endgame_categories WHERE id = ?', [$id]), true));
+    }
+
+    private function academyDeleteEndgameCategory(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $this->academyEndgameCategoryOrFail($id, (int) $session['entity']['id']);
+        $subs = $this->db->all('SELECT id FROM endgame_subcategories WHERE category_id = ?', [$id]);
+        foreach ($subs as $sub) {
+            $this->db->run('DELETE FROM endgame_chapters WHERE subcategory_id = ?', [$sub['id']]);
+        }
+        $this->db->run('DELETE FROM endgame_attempts WHERE category_id = ?', [$id]);
+        $this->db->run('DELETE FROM endgame_assignments WHERE category_id = ?', [$id]);
+        $this->db->run('DELETE FROM endgame_subcategories WHERE category_id = ?', [$id]);
+        $this->db->run('DELETE FROM endgame_categories WHERE id = ?', [$id]);
+        Http::json(['ok' => true]);
+    }
+
+    private function academyAddEndgameSubcategory(int $categoryId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $this->academyEndgameCategoryOrFail($categoryId, (int) $session['entity']['id']);
+        $name = trim((string) (Http::body()['name'] ?? ''));
+        if ($name === '') {
+            Http::error('Subcategory name is required', 400);
+        }
+        $count = $this->db->get('SELECT COUNT(*) as c FROM endgame_subcategories WHERE category_id = ?', [$categoryId]);
+        $id = $this->db->run(
+            'INSERT INTO endgame_subcategories (category_id, name, sort_order) VALUES (?, ?, ?)',
+            [$categoryId, $name, (int) ($count['c'] ?? 0)]
+        );
+        Http::json(['id' => $id, 'name' => $name, 'chapterCount' => 0, 'chapters' => []], 201);
+    }
+
+    private function academyPatchEndgameSubcategory(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $sub = $this->db->get(
+            'SELECT s.*, c.academy_id FROM endgame_subcategories s
+             JOIN endgame_categories c ON c.id = s.category_id WHERE s.id = ?',
+            [$id]
+        );
+        if (!$sub || (int) $sub['academy_id'] !== (int) $session['entity']['id']) {
+            Http::error('Subcategory not found', 404);
+        }
+        $name = trim((string) (Http::body()['name'] ?? $sub['name']));
+        if ($name === '') {
+            Http::error('Subcategory name is required', 400);
+        }
+        $this->db->run('UPDATE endgame_subcategories SET name = ? WHERE id = ?', [$name, $id]);
+        Http::json(['id' => $id, 'name' => $name]);
+    }
+
+    private function academyDeleteEndgameSubcategory(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $sub = $this->db->get(
+            'SELECT s.*, c.academy_id FROM endgame_subcategories s
+             JOIN endgame_categories c ON c.id = s.category_id WHERE s.id = ?',
+            [$id]
+        );
+        if (!$sub || (int) $sub['academy_id'] !== (int) $session['entity']['id']) {
+            Http::error('Subcategory not found', 404);
+        }
+        $this->db->run(
+            'DELETE FROM endgame_attempts WHERE chapter_id IN (SELECT id FROM endgame_chapters WHERE subcategory_id = ?)',
+            [$id]
+        );
+        $this->db->run('DELETE FROM endgame_chapters WHERE subcategory_id = ?', [$id]);
+        $this->db->run('DELETE FROM endgame_subcategories WHERE id = ?', [$id]);
+        Http::json(['ok' => true]);
+    }
+
+    private function academyAnalyzeEndgameFen(): void
+    {
+        $this->auth->requireAcademy();
+        try {
+            Http::json($this->endgames->analyzeFen((string) (Http::body()['fen'] ?? '')));
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+    }
+
+    private function academyAddEndgameChapter(int $subId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $sub = $this->db->get(
+            'SELECT s.*, c.academy_id FROM endgame_subcategories s
+             JOIN endgame_categories c ON c.id = s.category_id WHERE s.id = ?',
+            [$subId]
+        );
+        if (!$sub || (int) $sub['academy_id'] !== (int) $session['entity']['id']) {
+            Http::error('Subcategory not found', 404);
+        }
+        $body = Http::body();
+        $title = trim((string) ($body['title'] ?? ''));
+        try {
+            $goal = $this->endgames->normalizeGoal((string) ($body['goal'] ?? ''));
+            $this->endgames->analyzeFen((string) ($body['fen'] ?? ''));
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $count = $this->db->get('SELECT COUNT(*) as c FROM endgame_chapters WHERE subcategory_id = ?', [$subId]);
+        if ($title === '') {
+            $title = 'Position ' . ((int) ($count['c'] ?? 0) + 1);
+        }
+        $id = $this->db->run(
+            'INSERT INTO endgame_chapters (subcategory_id, title, fen, goal, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+            [$subId, $title, trim((string) $body['fen']), $goal, trim((string) ($body['notes'] ?? '')), (int) ($count['c'] ?? 0)]
+        );
+        Http::json($this->serializeEndgameChapter($this->db->get('SELECT * FROM endgame_chapters WHERE id = ?', [$id])), 201);
+    }
+
+    private function academyPatchEndgameChapter(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $chapter = $this->db->get(
+            'SELECT ch.*, c.academy_id FROM endgame_chapters ch
+             JOIN endgame_subcategories s ON s.id = ch.subcategory_id
+             JOIN endgame_categories c ON c.id = s.category_id WHERE ch.id = ?',
+            [$id]
+        );
+        if (!$chapter || (int) $chapter['academy_id'] !== (int) $session['entity']['id']) {
+            Http::error('Chapter not found', 404);
+        }
+        $body = Http::body();
+        $title = array_key_exists('title', $body) ? trim((string) $body['title']) : (string) $chapter['title'];
+        $fen = array_key_exists('fen', $body) ? trim((string) $body['fen']) : (string) $chapter['fen'];
+        $notes = array_key_exists('notes', $body) ? trim((string) $body['notes']) : (string) ($chapter['notes'] ?? '');
+        try {
+            $goal = array_key_exists('goal', $body)
+                ? $this->endgames->normalizeGoal((string) $body['goal'])
+                : (string) $chapter['goal'];
+            $this->endgames->analyzeFen($fen);
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        if ($title === '') {
+            Http::error('Chapter name is required', 400);
+        }
+        $this->db->run(
+            'UPDATE endgame_chapters SET title = ?, fen = ?, goal = ?, notes = ? WHERE id = ?',
+            [$title, $fen, $goal, $notes, $id]
+        );
+        Http::json($this->serializeEndgameChapter($this->db->get('SELECT * FROM endgame_chapters WHERE id = ?', [$id])));
+    }
+
+    private function academyDeleteEndgameChapter(int $id): void
+    {
+        $session = $this->auth->requireAcademy();
+        $chapter = $this->db->get(
+            'SELECT ch.*, c.academy_id FROM endgame_chapters ch
+             JOIN endgame_subcategories s ON s.id = ch.subcategory_id
+             JOIN endgame_categories c ON c.id = s.category_id WHERE ch.id = ?',
+            [$id]
+        );
+        if (!$chapter || (int) $chapter['academy_id'] !== (int) $session['entity']['id']) {
+            Http::error('Chapter not found', 404);
+        }
+        $this->db->run('DELETE FROM endgame_attempts WHERE chapter_id = ?', [$id]);
+        $this->db->run('DELETE FROM endgame_chapters WHERE id = ?', [$id]);
+        Http::json(['ok' => true]);
+    }
+
+    private function academyAssignEndgame(int $categoryId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $academyId = (int) $session['entity']['id'];
+        $this->academyEndgameCategoryOrFail($categoryId, $academyId);
+        $body = Http::body();
+        $studentIds = is_array($body['studentIds'] ?? null) ? $body['studentIds'] : [];
+        if (!empty($body['replace'])) {
+            $this->db->run('DELETE FROM endgame_assignments WHERE category_id = ?', [$categoryId]);
+        }
+        foreach ($studentIds as $rawId) {
+            $studentId = (int) $rawId;
+            if ($studentId < 1 || !$this->academyHasStudent($academyId, $studentId)) {
+                continue;
+            }
+            $this->db->run(
+                'INSERT OR IGNORE INTO endgame_assignments (category_id, student_id, academy_id) VALUES (?, ?, ?)',
+                [$categoryId, $studentId, $academyId]
+            );
+        }
+        $students = $this->db->all(
+            'SELECT s.id, s.name, s.username FROM endgame_assignments a
+             JOIN students s ON s.id = a.student_id WHERE a.category_id = ? ORDER BY s.name',
+            [$categoryId]
+        );
+        Http::json(['assignedStudents' => $students]);
+    }
+
+    private function academyEndgameProgress(int $categoryId): void
+    {
+        $session = $this->auth->requireAcademy();
+        $this->academyEndgameCategoryOrFail($categoryId, (int) $session['entity']['id']);
+        $rows = $this->db->all(
+            'SELECT s.id as student_id, s.name, s.username FROM endgame_assignments a
+             JOIN students s ON s.id = a.student_id WHERE a.category_id = ? ORDER BY s.name',
+            [$categoryId]
+        );
+        $progress = [];
+        foreach ($rows as $row) {
+            $stats = $this->studentEndgameStats((int) $row['student_id'], $categoryId);
+            $progress[] = array_merge($row, $stats, [
+                'green' => $stats['chaptersPassed'],
+            ]);
+        }
+        Http::json(['progress' => $progress]);
+    }
+
+    private function studentEndgames(): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $rows = $this->db->all(
+            'SELECT c.* FROM endgame_categories c
+             JOIN endgame_assignments a ON a.category_id = c.id
+             WHERE a.student_id = ? ORDER BY c.name',
+            [$studentId]
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = array_merge(
+                $this->serializeEndgameCategory($row, false),
+                $this->studentEndgameStats($studentId, (int) $row['id'])
+            );
+        }
+        Http::json(['categories' => $out, 'levels' => $this->endgames->levels()]);
+    }
+
+    private function studentGetEndgame(int $categoryId): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $assigned = $this->db->get(
+            'SELECT 1 FROM endgame_assignments WHERE category_id = ? AND student_id = ?',
+            [$categoryId, $studentId]
+        );
+        if (!$assigned) {
+            Http::error('This endgame is not assigned to you', 403);
+        }
+        $category = $this->db->get('SELECT * FROM endgame_categories WHERE id = ?', [$categoryId]);
+        $payload = $this->serializeEndgameCategory($category, true);
+        foreach ($payload['subcategories'] as &$sub) {
+            foreach ($sub['chapters'] as &$chapter) {
+                $chapter['passed'] = $this->chapterPassed($studentId, (int) $chapter['id']);
+                $latest = $this->db->get(
+                    'SELECT * FROM endgame_attempts WHERE student_id = ? AND chapter_id = ? AND completed_at IS NOT NULL
+                     ORDER BY completed_at DESC LIMIT 1',
+                    [$studentId, $chapter['id']]
+                );
+                $chapter['lastResult'] = $latest['result'] ?? null;
+                $chapter['practiceTaken'] = $this->db->get(
+                    'SELECT 1 FROM endgame_attempts WHERE student_id = ? AND chapter_id = ? AND mode = \'practice\' AND passed = 1 AND completed_at IS NOT NULL LIMIT 1',
+                    [$studentId, $chapter['id']]
+                ) !== null;
+                $chapter['testTaken'] = $this->db->get(
+                    'SELECT 1 FROM endgame_attempts WHERE student_id = ? AND chapter_id = ? AND mode = \'test\' AND completed_at IS NOT NULL LIMIT 1',
+                    [$studentId, $chapter['id']]
+                ) !== null;
+            }
+        }
+        Http::json(array_merge($payload, $this->studentEndgameStats($studentId, $categoryId)));
+    }
+
+    private function endgameLevels(): void
+    {
+        $this->auth->requireStudent();
+        Http::json(['levels' => $this->endgames->levels()]);
+    }
+
+    private function endgameMove(): void
+    {
+        $this->auth->requireStudent();
+        $body = Http::body();
+        try {
+            $pos = $this->endgames->applyMove(
+                (string) ($body['fen'] ?? ''),
+                (string) ($body['from'] ?? ''),
+                (string) ($body['to'] ?? ''),
+                (string) ($body['promotion'] ?? 'q')
+            );
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $goal = (string) ($body['goal'] ?? '');
+        $player = (string) ($body['playerColor'] ?? 'w');
+        $judge = $goal !== '' ? $this->endgames->judge($goal, $pos, $player) : ['over' => false];
+        Http::json(array_merge($pos, ['judge' => $judge]));
+    }
+
+    private function endgameEngineMove(): void
+    {
+        $this->auth->requireStudent();
+        $body = Http::body();
+        try {
+            $pos = $this->endgames->engineMove((string) ($body['fen'] ?? ''), (string) ($body['level'] ?? 'intermediate'));
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $goal = (string) ($body['goal'] ?? '');
+        $player = (string) ($body['playerColor'] ?? 'w');
+        $judge = $goal !== '' ? $this->endgames->judge($goal, $pos, $player) : ['over' => false];
+        Http::json(array_merge($pos, ['judge' => $judge]));
+    }
+
+    private function startEndgameAttempt(): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $body = Http::body();
+        $chapterId = (int) ($body['chapterId'] ?? 0);
+        $mode = ($body['mode'] ?? '') === 'test' ? 'test' : 'practice';
+        $level = (string) ($body['level'] ?? 'intermediate');
+        if (!isset(EndgameService::LEVELS[$level])) {
+            $level = 'intermediate';
+        }
+        $chapter = $this->db->get(
+            'SELECT ch.*, s.category_id FROM endgame_chapters ch
+             JOIN endgame_subcategories s ON s.id = ch.subcategory_id WHERE ch.id = ?',
+            [$chapterId]
+        );
+        if (!$chapter) {
+            Http::error('Position not found', 404);
+        }
+        $assigned = $this->db->get(
+            'SELECT 1 FROM endgame_assignments WHERE category_id = ? AND student_id = ?',
+            [$chapter['category_id'], $studentId]
+        );
+        if (!$assigned) {
+            Http::error('This endgame is not assigned to you', 403);
+        }
+        try {
+            $pos = $this->endgames->analyzeFen((string) $chapter['fen']);
+        } catch (InvalidArgumentException $e) {
+            Http::error($e->getMessage(), 400);
+        }
+        $player = $this->endgames->playerColor((string) $chapter['goal'], (string) $chapter['fen']);
+        $id = $this->db->run(
+            'INSERT INTO endgame_attempts (student_id, category_id, chapter_id, mode, engine_level) VALUES (?, ?, ?, ?, ?)',
+            [$studentId, (int) $chapter['category_id'], $chapterId, $mode, $level]
+        );
+        Http::json([
+            'attempt' => ['id' => $id, 'mode' => $mode, 'engineLevel' => $level],
+            'chapter' => $this->serializeEndgameChapter($chapter),
+            'position' => $pos,
+            'playerColor' => $player,
+            'levels' => $this->endgames->levels(),
+        ], 201);
+    }
+
+    private function getEndgameAttempt(int $id): void
+    {
+        $session = $this->auth->requireStudent();
+        $attempt = $this->db->get('SELECT * FROM endgame_attempts WHERE id = ?', [$id]);
+        if (!$attempt || (int) $attempt['student_id'] !== (int) $session['entity']['id']) {
+            Http::error('Attempt not found', 404);
+        }
+        Http::json(['attempt' => $attempt]);
+    }
+
+    private function finishEndgameAttempt(int $id): void
+    {
+        $session = $this->auth->requireStudent();
+        $attempt = $this->db->get('SELECT * FROM endgame_attempts WHERE id = ?', [$id]);
+        if (!$attempt || (int) $attempt['student_id'] !== (int) $session['entity']['id']) {
+            Http::error('Attempt not found', 404);
+        }
+        $body = Http::body();
+        $passed = !empty($body['passed']) ? 1 : 0;
+        $failed = (int) ($body['failedRestarts'] ?? $attempt['failed_restarts']);
+        $result = (string) ($body['result'] ?? '*');
+        if ($attempt['mode'] === 'test') {
+            $passed = $passed === 1 && $failed === 0 ? 1 : 0;
+        }
+        $this->db->run(
+            "UPDATE endgame_attempts
+             SET completed_at = datetime('now'), passed = ?, failed_restarts = ?, result = ?
+             WHERE id = ?",
+            [$passed, $failed, $result, $id]
+        );
+        Http::json([
+            'attempt' => $this->db->get('SELECT * FROM endgame_attempts WHERE id = ?', [$id]),
+            'green' => $passed === 1 && $attempt['mode'] === 'test',
+        ]);
     }
 }
