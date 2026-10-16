@@ -39,6 +39,16 @@
     return board;
   }
 
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let boardSeq = 0;
+  const BRUSHES = {
+    green: "#15781B",
+    red: "#882020",
+    blue: "#003088",
+    yellow: "#e68f00",
+  };
+  const BRUSH_ORDER = ["green", "red", "blue", "yellow"];
+
   function createChessBoard(root, options) {
     const opts = options || {};
     const state = {
@@ -52,8 +62,12 @@
       selected: null,
       playerColor: opts.playerColor || "w",
       turn: (opts.fen || " w ").split(" ")[1] || "w",
+      drawable: !!opts.drawable,
+      shapes: Array.isArray(opts.shapes) ? opts.shapes.slice() : [],
+      drawing: null,
     };
 
+    const markerNs = "wpah" + (++boardSeq);
     root.classList.add("wp-board-wrap");
     root.innerHTML = "";
     const frame = document.createElement("div");
@@ -61,7 +75,141 @@
     const board = document.createElement("div");
     board.className = "wp-board";
     frame.appendChild(board);
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "wp-shapes");
+    svg.setAttribute("viewBox", "0 0 8 8");
+    frame.appendChild(svg);
     root.appendChild(frame);
+
+    function squareXY(sq) {
+      const fi = filesFor(state.orientation).indexOf(sq[0]);
+      const ri = ranksFor(state.orientation).indexOf(Number(sq[1]));
+      return { x: fi + 0.5, y: ri + 0.5 };
+    }
+
+    function squareAtPoint(clientX, clientY) {
+      const rect = board.getBoundingClientRect();
+      const col = Math.floor(((clientX - rect.left) / rect.width) * 8);
+      const row = Math.floor(((clientY - rect.top) / rect.height) * 8);
+      if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+      return filesFor(state.orientation)[col] + ranksFor(state.orientation)[row];
+    }
+
+    function shapeNode(shape, preview) {
+      const color = BRUSHES[shape.brush] || BRUSHES.green;
+      const a = squareXY(shape.orig);
+      if (!shape.dest || shape.dest === shape.orig) {
+        const c = document.createElementNS(SVG_NS, "circle");
+        c.setAttribute("cx", a.x);
+        c.setAttribute("cy", a.y);
+        c.setAttribute("r", 0.5 - 0.0625 / 2 - 0.02);
+        c.setAttribute("fill", "none");
+        c.setAttribute("stroke", color);
+        c.setAttribute("stroke-width", 0.0625);
+        c.setAttribute("opacity", preview ? 0.5 : 1);
+        return c;
+      }
+      const b = squareXY(shape.dest);
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const margin = 0.3;
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", a.x);
+      line.setAttribute("y1", a.y);
+      line.setAttribute("x2", b.x - Math.cos(angle) * margin);
+      line.setAttribute("y2", b.y - Math.sin(angle) * margin);
+      line.setAttribute("stroke", color);
+      line.setAttribute("stroke-width", 0.15625);
+      line.setAttribute("stroke-linecap", "round");
+      line.setAttribute("marker-end", "url(#" + markerNs + "-" + (BRUSHES[shape.brush] ? shape.brush : "green") + ")");
+      line.setAttribute("opacity", preview ? 0.5 : 0.8);
+      return line;
+    }
+
+    function drawShapes() {
+      svg.innerHTML = "";
+      const defs = document.createElementNS(SVG_NS, "defs");
+      BRUSH_ORDER.forEach((name) => {
+        const marker = document.createElementNS(SVG_NS, "marker");
+        marker.setAttribute("id", markerNs + "-" + name);
+        marker.setAttribute("orient", "auto");
+        marker.setAttribute("markerWidth", "4");
+        marker.setAttribute("markerHeight", "8");
+        marker.setAttribute("refX", "2.05");
+        marker.setAttribute("refY", "2.01");
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", "M0,0 V4 L3,2 Z");
+        path.setAttribute("fill", BRUSHES[name]);
+        marker.appendChild(path);
+        defs.appendChild(marker);
+      });
+      svg.appendChild(defs);
+      state.shapes.forEach((shape) => svg.appendChild(shapeNode(shape, false)));
+      if (state.drawing && state.drawing.dest) {
+        svg.appendChild(shapeNode(state.drawing, true));
+      }
+    }
+
+    function sameShape(a, b) {
+      return a.orig === b.orig && (a.dest || a.orig) === (b.dest || b.orig);
+    }
+
+    function commitShape(shape) {
+      const idx = state.shapes.findIndex((s) => sameShape(s, shape));
+      if (idx === -1) {
+        state.shapes.push(shape);
+      } else if (state.shapes[idx].brush === shape.brush) {
+        state.shapes.splice(idx, 1);
+      } else {
+        state.shapes[idx] = shape;
+      }
+      drawShapes();
+      if (typeof opts.onShapesChange === "function") opts.onShapesChange(state.shapes.slice());
+    }
+
+    board.addEventListener("contextmenu", (e) => {
+      if (state.drawable) e.preventDefault();
+    });
+
+    board.addEventListener("mousedown", (e) => {
+      if (!state.drawable) return;
+      if (e.button === 0) {
+        if (state.shapes.length) {
+          state.shapes = [];
+          drawShapes();
+          if (typeof opts.onShapesChange === "function") opts.onShapesChange([]);
+        }
+        return;
+      }
+      if (e.button !== 2) return;
+      e.preventDefault();
+      const sq = squareAtPoint(e.clientX, e.clientY);
+      if (!sq) return;
+      const modA = e.shiftKey || e.ctrlKey;
+      const modB = e.altKey || e.metaKey;
+      state.drawing = { orig: sq, dest: null, brush: BRUSH_ORDER[(modA ? 1 : 0) + (modB ? 2 : 0)] };
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!state.drawing) return;
+      const sq = squareAtPoint(e.clientX, e.clientY);
+      const dest = sq && sq !== state.drawing.orig ? sq : null;
+      if (dest !== state.drawing.dest) {
+        state.drawing.dest = dest;
+        drawShapes();
+      }
+    });
+
+    window.addEventListener("mouseup", (e) => {
+      if (!state.drawing || e.button !== 2) return;
+      const sq = squareAtPoint(e.clientX, e.clientY);
+      const drawing = state.drawing;
+      state.drawing = null;
+      if (!sq) {
+        drawShapes();
+        return;
+      }
+      commitShape({ orig: drawing.orig, dest: sq === drawing.orig ? undefined : sq, brush: drawing.brush });
+    });
 
     function legalTargets(from) {
       return state.legal.filter((m) => m.from === from).map((m) => m.to);
@@ -109,6 +257,7 @@
           board.appendChild(el);
         });
       });
+      drawShapes();
     }
 
     function boardToFen() {
@@ -272,6 +421,17 @@
       },
       getFen() {
         return state.fen;
+      },
+      setShapes(shapes) {
+        state.shapes = Array.isArray(shapes) ? shapes.slice() : [];
+        drawShapes();
+      },
+      getShapes() {
+        return state.shapes.slice();
+      },
+      setDrawable(on) {
+        state.drawable = !!on;
+        state.drawing = null;
       },
       clear() {
         state.fen = "8/8/8/8/8/8/8/8 " + (state.turn || "w") + " - - 0 1";

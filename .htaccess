@@ -35,6 +35,7 @@ RewriteRule ^academy/home/?$ academy-home.php [L]
 RewriteRule ^academy/openings/?$ academy-openings.php [L]
 RewriteRule ^academy/endgames/?$ academy-endgames.php [L]
 # Force students dashboard to PHP (do not fall through to React SPA)
+RewriteRule ^academy/student/(\d+)/dashboard/?$ academy-student.php?id=$1 [L,QSA]
 RewriteRule ^academy/?$ academy.php [L]
 RewriteRule ^academy\.php$ - [L]
 RewriteRule ^opening/board/?$ opening-board.php [L,QSA]

@@ -29,11 +29,11 @@ declare(strict_types=1);
     <div class="hero">
       <a id="back" href="/wood/home">← Modules</a>
       <h1>Endgame</h1>
-      <p class="sub">Practice assigned positions against the engine, then take a clean test. Passed tests turn green so your academy can see what you learned.</p>
+      <p class="sub">Choose a category, then a position.</p>
     </div>
     <div id="app"><p class="empty">Loading endgames...</p></div>
   </div>
   <script src="/wood/assets/opening-chrome.js?v=3"></script>
-  <script src="/wood/assets/endgame-student.js?v=3"></script>
+  <script src="/wood/assets/endgame-student.js?v=6"></script>
 </body>
 </html>

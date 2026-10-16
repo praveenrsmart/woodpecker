@@ -62,6 +62,6 @@ declare(strict_types=1);
   </div>
   <script src="/wood/assets/opening-chrome.js?v=3"></script>
   <script src="/wood/assets/chess-board.js"></script>
-  <script src="/wood/assets/endgame-play.js?v=3"></script>
+  <script src="/wood/assets/endgame-play.js?v=4"></script>
 </body>
 </html>

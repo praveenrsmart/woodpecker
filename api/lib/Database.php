@@ -358,6 +358,17 @@ final class Database
             );
             CREATE INDEX IF NOT EXISTS idx_opening_tests_student ON opening_tests(student_id, opening_id);
             CREATE INDEX IF NOT EXISTS idx_opening_tests_chapter ON opening_tests(chapter_id, student_id);
+
+            CREATE TABLE IF NOT EXISTS opening_study (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                studied_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(student_id, chapter_id),
+                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                FOREIGN KEY (chapter_id) REFERENCES opening_chapters(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_opening_study_student ON opening_study(student_id);
         ");
     }
 

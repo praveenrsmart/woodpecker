@@ -73,6 +73,11 @@ if ($uri === '/academy/endgames') {
     require __DIR__ . '/academy-endgames.php';
     return true;
 }
+if (preg_match('#^/academy/student/(\d+)/dashboard$#', $uri, $m)) {
+    $_GET['id'] = $m[1];
+    require __DIR__ . '/academy-student.php';
+    return true;
+}
 if ($uri === '/academy') {
     require __DIR__ . '/academy.php';
     return true;
@@ -101,6 +106,12 @@ if ($uri !== '/' && is_file($file)) {
     // Never dump PHP source. Let the built-in server execute real .php files
     // only when the URL maps to a real path (no /wood prefix rewrite).
     if ($ext === 'php') {
+        // /wood/login.php is rewritten to /login.php above. The built-in server
+        // would then look up the original /wood/login.php path and return 404.
+        if ($fromWoodPrefix) {
+            require $file;
+            return true;
+        }
         return false;
     }
     // return false makes PHP look up the ORIGINAL URL on disk. After stripping

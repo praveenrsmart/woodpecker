@@ -9,7 +9,7 @@ declare(strict_types=1);
   <title>Opening — Chess Training</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/wood/assets/opening.css" />
+  <link rel="stylesheet" href="/wood/assets/opening.css?v=6" />
   <link rel="stylesheet" href="/wood/assets/opening-pieces.css" />
 </head>
 <body class="opening-app">
@@ -60,7 +60,7 @@ declare(strict_types=1);
     </div>
   </div>
   <script src="/wood/assets/opening-chrome.js"></script>
-  <script src="/wood/assets/chess-board.js"></script>
-  <script src="/wood/assets/opening-board-app.js"></script>
+  <script src="/wood/assets/chess-board.js?v=6"></script>
+  <script src="/wood/assets/opening-board-app.js?v=7"></script>
 </body>
 </html>

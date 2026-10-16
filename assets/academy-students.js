@@ -208,7 +208,7 @@
           BASE +
           "/academy/student/" +
           s.id +
-          "\">" +
+          "/dashboard\">" +
           escapeHtml(s.name) +
           "</a></strong><div class=\"muted\">@" +
           escapeHtml(s.username || "") +
@@ -238,7 +238,13 @@
           BASE +
           "/academy/student/" +
           s.id +
-          '">View</a>' +
+          '/dashboard">Dashboard</a>' +
+          '<a class="wood-link" href="' +
+          BASE +
+          "/academy/student/" +
+          s.id +
+          '" title="Woodpecker results" aria-label="Woodpecker results">' +
+          '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#c2410c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/></svg></a>' +
           '<button type="button" data-act="password">Set password</button>' +
           '<button type="button" data-act="toggle">' +
           (active ? "Mark inactive" : "Mark active") +

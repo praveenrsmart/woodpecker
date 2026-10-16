@@ -40,6 +40,8 @@
 
   function renderList(categories) {
     var app = document.getElementById("app");
+    document.querySelector("h1").textContent = "Endgame";
+    document.querySelector(".sub").textContent = "Choose a category.";
     if (!categories.length) {
       app.innerHTML = '<div class="card"><p class="empty">Your academy has not assigned any endgames yet.</p></div>';
       return;
@@ -53,57 +55,91 @@
         '<div class="section-card ' + (green && green === total ? "is-green" : "") + '">' +
         "<h3>" + esc(c.name) + (green && green === total ? ' <span class="green">Completed</span>' : "") + "</h3>" +
         '<div class="meta">' +
-        c.subcategoryCount + " subcategor" + (c.subcategoryCount === 1 ? "y" : "ies") + " · " +
+        (c.subcategoryCount || 0) + " categor" + ((c.subcategoryCount || 0) === 1 ? "y" : "ies") + " · " +
         total + " position" + (total === 1 ? "" : "s") + " · Green: <span class=\"stat\">" + green + "/" + total + "</span>" +
         "</div>" +
         '<div class="row" style="margin-top:14px">' +
-        '<a class="btn" href="' + BASE + "/endgame.php?id=" + c.id + '">Open positions</a>' +
+        '<a class="btn" href="' + BASE + "/endgame.php?id=" + c.id + '">Select category</a>' +
+        "</div></div>";
+    }
+    app.innerHTML = html;
+  }
+
+  function renderCategories(category) {
+    var app = document.getElementById("app");
+    document.getElementById("back").setAttribute("href", BASE + "/endgame.php");
+    document.querySelector("h1").textContent = category.name;
+    document.querySelector(".sub").textContent = "Select positions.";
+    var subs = category.subcategories || [];
+    if (!subs.length) {
+      app.innerHTML = '<div class="card"><p class="empty">No categories yet.</p></div>';
+      return;
+    }
+    var html = "";
+    for (var s = 0; s < subs.length; s++) {
+      var sub = subs[s];
+      var chapters = sub.chapters || [];
+      var green = 0;
+      for (var i = 0; i < chapters.length; i++) if (chapters[i].passed) green++;
+      var total = chapters.length || sub.chapterCount || 0;
+      html +=
+        '<div class="section-card ' + (total && green === total ? "is-green" : "") + '">' +
+        "<h3>" + esc(sub.name) + (total && green === total ? ' <span class="green">Completed</span>' : "") + "</h3>" +
+        '<div class="meta">' +
+        total + " position" + (total === 1 ? "" : "s") +
+        ' · Green: <span class="stat">' + green + "/" + total + "</span>" +
+        "</div>" +
+        '<div class="row" style="margin-top:14px">' +
+        '<a class="btn" href="' + BASE + "/endgame.php?id=" + category.id + "&sub=" + sub.id + '">Select positions</a>' +
+        "</div></div>";
+    }
+    app.innerHTML = html;
+  }
+
+  function renderPositions(category, sub) {
+    var app = document.getElementById("app");
+    document.getElementById("back").setAttribute("href", BASE + "/endgame.php?id=" + category.id);
+    document.querySelector("h1").textContent = sub.name;
+    document.querySelector(".sub").textContent = category.name + " · Choose a position. Practice first, then take the test with no mistakes.";
+    var chapters = sub.chapters || [];
+    if (!chapters.length) {
+      app.innerHTML = '<div class="card"><p class="empty">No positions in this category yet.</p></div>';
+      return;
+    }
+    var html = "";
+    for (var c = 0; c < chapters.length; c++) {
+      var ch = chapters[c];
+      var testHref = boardUrl(category.id, ch.id, "test");
+      var practiceHref = boardUrl(category.id, ch.id, "practice");
+      html +=
+        '<div class="section-card ' + (ch.passed ? "is-green" : "") + '">' +
+        "<h3>" + esc(ch.title) + (ch.passed ? ' <span class="green">Green</span>' : "") + "</h3>" +
+        '<div class="meta">' + esc(ch.goalLabel) + " · You play " + (ch.playerColor === "b" ? "Black" : "White") +
+        (ch.practiceTaken ? " · Practiced" : "") +
+        (ch.testTaken && !ch.passed ? " · Test taken" : "") +
+        "</div>" +
+        '<div class="row" style="margin-top:14px">' +
+        '<a class="btn ghost" href="' + practiceHref + '">Practice vs engine</a>' +
+        (ch.practiceTaken
+          ? '<a class="btn" href="' + testHref + '">Take test</a>'
+          : '<span class="btn ghost is-off">Take test (practice first)</span>') +
         "</div></div>";
     }
     app.innerHTML = html;
   }
 
   function renderCategory(category) {
-    var app = document.getElementById("app");
-    document.getElementById("back").setAttribute("href", BASE + "/endgame.php");
-    document.querySelector("h1").textContent = category.name;
-    document.querySelector(".sub").textContent =
-      "Green tests: " +
-      (category.chaptersPassed || 0) +
-      "/" +
-      (category.chapterCount || 0) +
-      " · Practice first, then take the test with no mistakes.";
-    var blocks = "";
+    var subId = Number(params.get("sub") || 0);
     var subs = category.subcategories || [];
-    for (var s = 0; s < subs.length; s++) {
-      var sub = subs[s];
-      var cards = "";
-      var chapters = sub.chapters || [];
-      for (var c = 0; c < chapters.length; c++) {
-        var ch = chapters[c];
-        var testHref = boardUrl(category.id, ch.id, "test");
-        var practiceHref = boardUrl(category.id, ch.id, "practice");
-        cards +=
-          '<div class="section-card ' + (ch.passed ? "is-green" : "") + '">' +
-          "<h3>" + esc(ch.title) + (ch.passed ? ' <span class="green">Green</span>' : "") + "</h3>" +
-          '<div class="meta">' + esc(ch.goalLabel) + " · You play " + (ch.playerColor === "b" ? "Black" : "White") +
-          (ch.practiceTaken ? " · Practiced" : "") +
-          (ch.testTaken && !ch.passed ? " · Test taken" : "") +
-          "</div>" +
-          '<div class="row" style="margin-top:14px">' +
-          '<a class="btn ghost" href="' + practiceHref + '">Practice vs engine</a>' +
-          (ch.practiceTaken
-            ? '<a class="btn" href="' + testHref + '">Take test</a>'
-            : '<span class="btn ghost is-off">Take test (practice first)</span>') +
-          "</div></div>";
+    if (subId) {
+      for (var i = 0; i < subs.length; i++) {
+        if (subs[i].id === subId) {
+          renderPositions(category, subs[i]);
+          return;
+        }
       }
-      blocks +=
-        '<div style="margin-bottom:22px">' +
-        '<h2 class="group-title">' + esc(sub.name) + "</h2>" +
-        (cards || '<p class="empty">No positions in this subcategory yet.</p>') +
-        "</div>";
     }
-    app.innerHTML = blocks || '<div class="card"><p class="empty">No positions in this category yet.</p></div>';
+    renderCategories(category);
   }
 
   var params = new URLSearchParams(location.search);

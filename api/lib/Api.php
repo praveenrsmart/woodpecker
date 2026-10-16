@@ -56,6 +56,8 @@ final class Api
             'POST /academy/openings' => fn () => $this->academyCreateOpening(),
             'POST /academy/openings/parse-pgn' => fn () => $this->academyParsePgn(),
             'GET /me/openings' => fn () => $this->studentOpenings(),
+            'GET /me/progress' => fn () => $this->studentHomeProgress(),
+            'POST /me/opening-study' => fn () => $this->markOpeningStudy(),
             'GET /me/opening-tests' => fn () => $this->studentOpeningTests(),
             'POST /opening-tests/start' => fn () => $this->startOpeningTest(),
             'GET /academy/endgames' => fn () => $this->academyEndgames(),
@@ -1406,6 +1408,7 @@ final class Api
         Http::json(array_merge($stats, [
             'coachName' => $link['coach_name'] ?? null,
             'addedAt' => $link['added_at'] ?? null,
+            'progress' => $this->progressForStudent($studentId),
         ]));
     }
 
@@ -2210,7 +2213,7 @@ final class Api
         $this->auth->requireAcademy();
         $body = Http::body();
         try {
-            $parsed = $this->openings->parsePgn((string) ($body['pgn'] ?? ''));
+            $parsed = $this->openings->importPgn((string) ($body['pgn'] ?? ''));
         } catch (InvalidArgumentException $e) {
             Http::error($e->getMessage(), 400);
         }
@@ -2306,7 +2309,7 @@ final class Api
         $title = trim((string) ($body['title'] ?? ''));
         $pgn = (string) ($body['pgn'] ?? '');
         try {
-            $parsed = $this->openings->parsePgn($pgn);
+            $parsed = $this->openings->importPgn($pgn);
         } catch (InvalidArgumentException $e) {
             Http::error($e->getMessage(), 400);
         }
@@ -2316,7 +2319,7 @@ final class Api
         }
         $id = $this->db->run(
             'INSERT INTO opening_chapters (opening_id, title, pgn, start_fen, moves_json, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
-            [$openingId, $title, trim($pgn), $parsed['startFen'], json_encode($parsed['moves']), $count]
+            [$openingId, $title, $parsed['pgn'], $parsed['startFen'], json_encode($parsed['moves']), $count]
         );
         $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$id]);
         Http::json([
@@ -2337,13 +2340,19 @@ final class Api
             Http::error('Chapter name is required', 400);
         }
         try {
-            $parsed = $this->openings->parsePgn($pgn);
+            if (array_key_exists('shapes', $body) && is_array($body['shapes'])) {
+                $pgn = $this->openings->pgnWithShapes($pgn, $body['shapes']);
+                $parsed = $this->openings->parsePgn($pgn);
+            } else {
+                $parsed = $this->openings->importPgn($pgn);
+                $pgn = $parsed['pgn'];
+            }
         } catch (InvalidArgumentException $e) {
             Http::error($e->getMessage(), 400);
         }
         $this->db->run(
             'UPDATE opening_chapters SET title = ?, pgn = ?, start_fen = ?, moves_json = ?, sort_order = ? WHERE id = ?',
-            [$title, trim($pgn), $parsed['startFen'], json_encode($parsed['moves']), $sortOrder, $chapterId]
+            [$title, $pgn, $parsed['startFen'], json_encode($parsed['moves']), $sortOrder, $chapterId]
         );
         $updated = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$chapterId]);
         Http::json($this->openings->publicChapter($updated, true));
@@ -2423,6 +2432,132 @@ final class Api
             $progress[] = array_merge($row, $stats);
         }
         Http::json(['progress' => $progress]);
+    }
+
+    private function markOpeningStudy(): void
+    {
+        $session = $this->auth->requireStudent();
+        $studentId = (int) $session['entity']['id'];
+        $body = Http::body();
+        $chapterId = (int) ($body['chapterId'] ?? 0);
+        $chapter = $this->db->get('SELECT * FROM opening_chapters WHERE id = ?', [$chapterId]);
+        if (!$chapter) {
+            Http::error('Chapter not found', 404);
+        }
+        $assigned = $this->db->get(
+            'SELECT 1 FROM opening_assignments WHERE opening_id = ? AND student_id = ?',
+            [$chapter['opening_id'], $studentId]
+        );
+        if (!$assigned) {
+            Http::error('This opening is not assigned to you', 403);
+        }
+        $this->db->run(
+            'INSERT OR IGNORE INTO opening_study (student_id, chapter_id) VALUES (?, ?)',
+            [$studentId, $chapterId]
+        );
+        Http::json(['ok' => true]);
+    }
+
+    private function studentHomeProgress(): void
+    {
+        $session = $this->auth->requireStudent();
+        Http::json($this->progressForStudent((int) $session['entity']['id']));
+    }
+
+    private function progressForStudent(int $studentId): array
+    {
+
+        $openings = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_assignments WHERE student_id = ?',
+            [$studentId]
+        );
+        $openingChapters = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_chapters c
+             JOIN opening_assignments a ON a.opening_id = c.opening_id
+             WHERE a.student_id = ?',
+            [$studentId]
+        );
+        $openingStudied = $this->db->get(
+            'SELECT COUNT(*) as c FROM opening_study s
+             JOIN opening_chapters c ON c.id = s.chapter_id
+             JOIN opening_assignments a ON a.opening_id = c.opening_id AND a.student_id = s.student_id
+             WHERE s.student_id = ?',
+            [$studentId]
+        );
+        $openingTested = $this->db->get(
+            'SELECT COUNT(DISTINCT t.chapter_id) as c FROM opening_tests t
+             JOIN opening_assignments a ON a.opening_id = t.opening_id AND a.student_id = t.student_id
+             WHERE t.student_id = ? AND t.completed_at IS NOT NULL',
+            [$studentId]
+        );
+
+        $sections = self::VALID_SECTIONS;
+        $puzzleTotal = 0;
+        foreach ($sections as $section) {
+            $puzzleTotal += $this->sectionPuzzleCount($section);
+        }
+        $cycles = $this->db->all(
+            "SELECT c.section_filter, c.cycle_number, c.completed_at,
+                (SELECT COUNT(*) FROM puzzle_attempts pa WHERE pa.cycle_id = c.id AND pa.completed = 1) as done
+             FROM cycles c WHERE c.student_id = ?",
+            [$studentId]
+        );
+        $latest = [];
+        $cyclesFinished = 0;
+        foreach ($cycles as $cycle) {
+            if (!empty($cycle['completed_at'])) {
+                $cyclesFinished++;
+            }
+            $section = (string) $cycle['section_filter'];
+            if (!in_array($section, $sections, true)) {
+                continue;
+            }
+            $number = (int) $cycle['cycle_number'];
+            if (!isset($latest[$section]) || $number >= $latest[$section]['number']) {
+                $latest[$section] = ['number' => $number, 'done' => (int) $cycle['done']];
+            }
+        }
+        $puzzlesStudied = 0;
+        foreach ($latest as $row) {
+            $puzzlesStudied += $row['done'];
+        }
+
+        $endgamePositions = $this->db->get(
+            'SELECT COUNT(*) as c FROM endgame_chapters ch
+             JOIN endgame_subcategories s ON s.id = ch.subcategory_id
+             JOIN endgame_assignments a ON a.category_id = s.category_id
+             WHERE a.student_id = ?',
+            [$studentId]
+        );
+        $endgameStudied = $this->db->get(
+            "SELECT COUNT(DISTINCT chapter_id) as c FROM endgame_attempts
+             WHERE student_id = ? AND mode = 'practice' AND completed_at IS NOT NULL",
+            [$studentId]
+        );
+        $endgameTested = $this->db->get(
+            "SELECT COUNT(DISTINCT chapter_id) as c FROM endgame_attempts
+             WHERE student_id = ? AND mode = 'test' AND completed_at IS NOT NULL",
+            [$studentId]
+        );
+
+        return [
+            'opening' => [
+                'assignedOpenings' => (int) ($openings['c'] ?? 0),
+                'assigned' => (int) ($openingChapters['c'] ?? 0),
+                'studied' => (int) ($openingStudied['c'] ?? 0),
+                'tested' => (int) ($openingTested['c'] ?? 0),
+            ],
+            'woodpecker' => [
+                'assigned' => $puzzleTotal,
+                'studied' => $puzzlesStudied,
+                'tested' => $cyclesFinished,
+            ],
+            'endgame' => [
+                'assigned' => (int) ($endgamePositions['c'] ?? 0),
+                'studied' => (int) ($endgameStudied['c'] ?? 0),
+                'tested' => (int) ($endgameTested['c'] ?? 0),
+            ],
+        ];
     }
 
     private function studentOpenings(): void

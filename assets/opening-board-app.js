@@ -147,6 +147,55 @@
     const m = data.moves[index - 1];
     return { from: m.from, to: m.to };
   }
+  function shapesFromPgn(pgn, plyCount) {
+    const shapes = [];
+    for (let i = 0; i <= plyCount; i++) shapes.push([]);
+    const text = String(pgn || "").replace(/\[[A-Za-z0-9]+\s+"[^"]*"\]/g, "");
+    const brush = { G: "green", R: "red", B: "blue", Y: "yellow" };
+    let ply = 0;
+    const re = /\{([^{}]*)\}|(\S+)/g;
+    let match;
+    while ((match = re.exec(text))) {
+      if (match[1] != null) {
+        const list = shapes[ply] || (shapes[ply] = []);
+        const comment = match[1];
+        const csl = /\[%csl\s+([^\]]*)\]/g;
+        const cal = /\[%cal\s+([^\]]*)\]/g;
+        let tag;
+        while ((tag = csl.exec(comment))) {
+          tag[1].split(",").forEach((item) => {
+            const hit = /^([GRBY])([a-h][1-8])$/.exec(item.trim());
+            if (hit) list.push({ orig: hit[2], brush: brush[hit[1]] });
+          });
+        }
+        while ((tag = cal.exec(comment))) {
+          tag[1].split(",").forEach((item) => {
+            const hit = /^([GRBY])([a-h][1-8])([a-h][1-8])$/.exec(item.trim());
+            if (hit) list.push({ orig: hit[2], dest: hit[3], brush: brush[hit[1]] });
+          });
+        }
+        continue;
+      }
+      const token = match[2].replace(/^\d+\.+/, "").replace(/[!?]+$/, "");
+      if (!token || token[0] === "$" || token === "*" || token === "1-0" || token === "0-1" || token === "1/2-1/2") continue;
+      ply += 1;
+    }
+    return shapes;
+  }
+
+  function prepareShapes(chapter) {
+    const fromApi = chapter.shapes;
+    if (Array.isArray(fromApi) && fromApi.some((row) => Array.isArray(row) && row.length)) {
+      chapter.shapes = fromApi;
+      return;
+    }
+    chapter.shapes = shapesFromPgn(chapter.pgn, (chapter.moves || []).length);
+  }
+
+  function shapesAt(data, index) {
+    const list = (data.shapes || [])[index];
+    return Array.isArray(list) ? list : [];
+  }
 
   function renderMoves(data, current, hideFuture) {
     const box = document.getElementById("moves");
@@ -199,6 +248,8 @@
   async function startStudy(opening) {
     const chapter = (opening.chapters || []).find((c) => c.id === chapterId);
     if (!chapter) throw new Error("Chapter not found");
+    prepareShapes(chapter);
+    api("/me/opening-study", { method: "POST", body: JSON.stringify({ chapterId }) }).catch(() => {});
     renderChapterNav(opening);
     document.getElementById("title").textContent = opening.name;
     document.getElementById("subtitle").textContent = chapter.title + " · Study";
@@ -212,6 +263,7 @@
       fen: chapter.startFen,
       orientation: opening.colorGroup,
       interactive: false,
+      shapes: shapesAt(chapter, 0),
     });
     ply = 0;
     reviewReady = true;
@@ -219,6 +271,7 @@
     function go(next) {
       ply = Math.max(0, Math.min(chapter.moves.length, next));
       board.setFen(fenAt(chapter, ply), lastAt(chapter, ply));
+      board.setShapes(shapesAt(chapter, ply));
       renderMoves(chapter, ply, false);
       renderNextLine(opening, ply >= chapter.moves.length && chapter.moves.length > 0);
     }
@@ -301,12 +354,14 @@
       reviewReady = true;
       ply = chapter.moves.length;
       document.getElementById("study-controls").style.display = "flex";
+      board.setShapes(shapesAt(chapter, ply));
       stepLine = function (dir) {
         if (dir === "start") ply = 0;
         else if (dir === "end") ply = chapter.moves.length;
         else ply = Math.max(0, Math.min(chapter.moves.length, ply + dir));
         board.setInteractive(false);
         board.setFen(fenAt(chapter, ply), lastAt(chapter, ply));
+        board.setShapes(shapesAt(chapter, ply));
         renderMoves(chapter, ply, false);
       };
     }

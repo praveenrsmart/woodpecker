@@ -193,6 +193,19 @@ declare(strict_types=1);
       color: #fff;
       border: 0;
     }
+    .student-actions a.wood-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border: 0;
+      background: transparent;
+      text-decoration: none;
+      line-height: 0;
+    }
+    .student-actions a.wood-link:hover svg {
+      transform: scale(1.12);
+    }
     .student-actions button.danger {
       border-color: #fecaca;
       color: #b91c1c;
@@ -334,6 +347,6 @@ declare(strict_types=1);
 
   <div id="modal-root"></div>
   <script src="/wood/assets/opening-chrome.js?v=3"></script>
-  <script src="/wood/assets/academy-students.js?v=4"></script>
+  <script src="/wood/assets/academy-students.js?v=7"></script>
 </body>
 </html>

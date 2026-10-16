@@ -338,10 +338,13 @@
     const found = chapters.find((c) => c.id === chapterId);
     if (!found) throw new Error("Position not found");
     if (mode === "test" && !found.practiceTaken) {
-      location.replace(BASE + "/endgame.php?id=" + categoryId);
+      location.replace(BASE + "/endgame.php?id=" + categoryId + (found.subcategoryId ? "&sub=" + found.subcategoryId : ""));
       return;
     }
     chapter = found;
+    if (found.subcategoryId) {
+      document.getElementById("back").setAttribute("href", BASE + "/endgame.php?id=" + categoryId + "&sub=" + found.subcategoryId);
+    }
     document.getElementById("title").textContent = found.title;
     document.getElementById("subtitle").textContent =
       category.name + " · " + found.goalLabel + " · " + (mode === "test" ? "Test" : "Practice");

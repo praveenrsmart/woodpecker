@@ -441,6 +441,26 @@ th, td { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--bor
   overflow: hidden;
   box-shadow: 0 8px 24px #0f172a1f;
   border: 2px solid var(--border-strong);
+  position: relative;
+}
+.arrow-editor { display: grid; grid-template-columns: minmax(0, 480px) 220px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .arrow-editor { grid-template-columns: 1fr; } }
+.arrow-mark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: #15781B;
+  vertical-align: middle;
+}
+.wp-shapes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
 }
 .wp-board {
   width: 100%;
