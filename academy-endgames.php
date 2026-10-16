@@ -9,7 +9,7 @@ declare(strict_types=1);
   <title>Endgame library — Academy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/wood/assets/opening.css?v=4" />
+  <link rel="stylesheet" href="/wood/assets/opening.css?v=5" />
   <link rel="stylesheet" href="/wood/assets/opening-pieces.css" />
 </head>
 <body class="opening-app">
@@ -50,6 +50,6 @@ declare(strict_types=1);
   </div>
   <script src="/wood/assets/opening-chrome.js?v=4"></script>
   <script src="/wood/assets/chess-board.js"></script>
-  <script src="/wood/assets/academy-endgames.js?v=4"></script>
+  <script src="/wood/assets/academy-endgames.js?v=5"></script>
 </body>
 </html>

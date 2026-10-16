@@ -194,6 +194,8 @@ final class Database
         $this->migrateOpenings();
         $this->migrateEndgames();
         $this->migrateFeathersAcademy();
+        $this->seedEndgameCatalog();
+        $this->normalizeEndgamePositionTitles();
     }
 
     public function ensureSuperAdmin(string $username, string $password): void
@@ -495,6 +497,149 @@ final class Database
         $this->run(
             "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('feathers_students_moved', ?)",
             [(string) $academyId]
+        );
+    }
+
+    /**
+     * One-time replace of endgame rows with assets/endgamedatabase.json.
+     * Old categories, positions, assignments, and attempts are removed.
+     */
+    private function seedEndgameCatalog(): void
+    {
+        $this->exec("
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ");
+        if ($this->get("SELECT value FROM app_meta WHERE key = 'endgame_catalog_v1'")) {
+            return;
+        }
+
+        $path = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'endgamedatabase.json';
+        if (!is_file($path)) {
+            return;
+        }
+        $raw = file_get_contents($path);
+        $data = is_string($raw) ? json_decode($raw, true) : null;
+        $categories = is_array($data) ? ($data['categories'] ?? null) : null;
+        if (!is_array($categories) || $categories === []) {
+            return;
+        }
+
+        $academies = $this->all('SELECT id FROM academies ORDER BY id');
+        if ($academies === []) {
+            return;
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->exec('DELETE FROM endgame_attempts');
+            $this->exec('DELETE FROM endgame_assignments');
+            $this->exec('DELETE FROM endgame_chapters');
+            $this->exec('DELETE FROM endgame_subcategories');
+            $this->exec('DELETE FROM endgame_categories');
+
+            $insertCategory = $this->pdo->prepare(
+                'INSERT INTO endgame_categories (academy_id, name, notes, sort_order) VALUES (?, ?, ?, ?)'
+            );
+            $insertSub = $this->pdo->prepare(
+                'INSERT INTO endgame_subcategories (category_id, name, sort_order) VALUES (?, ?, ?)'
+            );
+            $insertChapter = $this->pdo->prepare(
+                'INSERT INTO endgame_chapters (subcategory_id, title, fen, goal, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+            );
+
+            foreach ($academies as $academy) {
+                $academyId = (int) $academy['id'];
+                $catOrder = 0;
+                foreach ($categories as $category) {
+                    if (!is_array($category)) {
+                        continue;
+                    }
+                    $name = trim((string) ($category['name'] ?? ''));
+                    if ($name === '') {
+                        continue;
+                    }
+                    $insertCategory->execute([$academyId, $name, '', $catOrder]);
+                    $categoryId = (int) $this->pdo->lastInsertId();
+                    $catOrder++;
+
+                    $subOrder = 0;
+                    foreach ($category['subcategories'] ?? [] as $sub) {
+                        if (!is_array($sub)) {
+                            continue;
+                        }
+                        $subName = trim((string) ($sub['name'] ?? ''));
+                        if ($subName === '') {
+                            continue;
+                        }
+                        $insertSub->execute([$categoryId, $subName, $subOrder]);
+                        $subId = (int) $this->pdo->lastInsertId();
+                        $subOrder++;
+
+                        $chapterOrder = 0;
+                        foreach ($sub['games'] ?? [] as $game) {
+                            if (!is_array($game)) {
+                                continue;
+                            }
+                            $fen = trim((string) ($game['fen'] ?? ''));
+                            if ($fen === '') {
+                                continue;
+                            }
+                            $target = strtolower(trim((string) ($game['target'] ?? 'checkmate')));
+                            $turn = explode(' ', $fen)[1] ?? 'w';
+                            $goal = $target === 'draw' ? 'draw' : ($turn === 'b' ? 'black_win' : 'white_win');
+                            $chapterOrder++;
+                            $insertChapter->execute([
+                                $subId,
+                                (string) $chapterOrder,
+                                $fen,
+                                $goal,
+                                '',
+                                $chapterOrder - 1,
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            $this->run(
+                "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('endgame_catalog_v1', ?)",
+                [date('c')]
+            );
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function normalizeEndgamePositionTitles(): void
+    {
+        if ($this->get("SELECT value FROM app_meta WHERE key = 'endgame_titles_plain'")) {
+            return;
+        }
+        $update = $this->pdo->prepare('UPDATE endgame_chapters SET title = ? WHERE id = ?');
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($this->all('SELECT id, title FROM endgame_chapters') as $row) {
+                if (preg_match('/^(\d+)\.\s+(Mate in \d+|Checkmate|Draw)$/', (string) $row['title'], $match)) {
+                    $update->execute([$match[1], $row['id']]);
+                }
+            }
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        $this->run(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('endgame_titles_plain', ?)",
+            [date('c')]
         );
     }
 

@@ -252,7 +252,48 @@ input, select, textarea {
 textarea { min-height: 140px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .row .btn, .row a.btn { flex: 0 0 auto; }
-.chips { display: flex; gap: 8px; margin-bottom: 14px; }
+.subcat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.subcat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 2px solid var(--border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-bright);
+  cursor: pointer;
+}
+.subcat-name { min-width: 0; }
+.subcat-count {
+  flex: 0 0 auto;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+.subcat.on {
+  border-color: transparent;
+  background: var(--accent-gradient);
+  color: #fff;
+}
+.subcat.on .subcat-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.chips { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .chip {
   border: 2px solid var(--border);
   background: #fff;

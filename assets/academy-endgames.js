@@ -139,11 +139,11 @@
       <button class="btn ghost" id="save-notes" type="button">Save notes</button>
 
       <h3 style="margin:22px 0 8px;color:#1e1b4b">Subcategories</h3>
-      <div class="chips" id="sub-chips">
+      <div class="subcat-list" id="sub-chips">
         ${(category.subcategories || [])
           .map(
             (s) =>
-              `<button class="chip ${s.id === selectedSubId ? "on" : ""}" type="button" data-sub="${s.id}">${esc(s.name)} (${s.chapterCount})</button>`
+              `<button class="subcat ${s.id === selectedSubId ? "on" : ""}" type="button" data-sub="${s.id}"><span class="subcat-name">${esc(s.name)}</span><span class="subcat-count">${s.chapterCount}</span></button>`
           )
           .join("") || '<p class="empty">Add a subcategory, then save positions under it.</p>'}
       </div>
